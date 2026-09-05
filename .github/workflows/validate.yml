@@ -1,0 +1,101 @@
+name: validate
+
+# Every one of these repos shipped with no CI at all (GH-483): a change landed,
+# jrackerby/HA bumped the submodule pointer, and nothing between the edit and
+# the live estate ever validated the manifest.
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # HACS and hassfest both move under us. A repo that only validates on push
+    # goes quietly stale between commits, and these repos can sit untouched for
+    # months.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+env:
+  DOMAIN: host_monitor
+
+jobs:
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      # Into a subdirectory ON PURPOSE. The step below builds the layout
+      # hassfest expects AT THE WORKSPACE ROOT, and it cannot do that if the
+      # repo is already checked out there.
+      - uses: actions/checkout@v4
+        with:
+          path: src
+
+      # WHY THIS STAGING STEP EXISTS. home-assistant/actions/hassfest takes no
+      # path input -- it runs the hassfest image against ${{ github.workspace }}
+      # and scans custom_components/*. This repo keeps its integration at the
+      # ROOT (hacs.json content_in_root: true) because jrackerby/HA submodules
+      # it AS custom_components/${{ env.DOMAIN }}. Handed the repo as-is,
+      # hassfest finds zero integrations. So build the HA layout here rather
+      # than restructure the repo and break the submodule path.
+      - name: stage the custom_components layout hassfest scans
+        run: |
+          mkdir -p "custom_components/$DOMAIN"
+          # cp/rm, not rsync: rsync is present on today's ubuntu-latest but is
+          # not part of any image guarantee, and a staging step that dies on a
+          # missing tool is a gate that silently stops running.
+          cp -a src/. "custom_components/$DOMAIN/"
+          rm -rf "custom_components/$DOMAIN/.git" "custom_components/$DOMAIN/.github"
+          # A gate that could not run is not a pass. If the copy above ever
+          # moves nothing, hassfest validates an empty tree and reports green
+          # over an integration it never opened -- so assert the staged
+          # manifest by hand before handing it over.
+          test -f "custom_components/$DOMAIN/manifest.json" \
+            || { echo "CANNOT RUN: staging produced no manifest.json -- hassfest would pass vacuously"; exit 1; }
+          echo "staged $(find "custom_components/$DOMAIN" -type f | wc -l) files"
+
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # VOID -- NOT A PASS, AND NOT A FAILURE OF THIS REPO. Measured on the
+      # first run of this workflow: hacs/action reported <Validation hacsjson>
+      # and <Validation integration_manifest> failed, the latter with
+      # "expected a dictionary. Got None". Neither is about the files here.
+      # HACS fetches hacs.json and manifest.json from raw.githubusercontent.com
+      # (repositories/base.py get_hacs_json_raw, repositories/integration.py
+      # get_integration_manifest) through base.py async_download_file, which is
+      # called with headers=None -- no Authorization header on that path, ever.
+      # A private repository 404s there. Confirmed by hand against both this
+      # branch and master: 404 on each.
+      #
+      # That same unauthenticated fetch is what a LIVE HACS install uses, so it
+      # is not a CI artifact: HACS cannot install this repo while it is private.
+      # Reporting it as VOID rather than green keeps the distinction that
+      # matters -- the check did not run, so nothing was proven either way. It
+      # starts running by itself the moment the repository is made public.
+      # jrackerby/HA#483 carries that decision.
+      - name: VOID -- HACS validation cannot run against a private repository
+        if: ${{ github.event.repository.private }}
+        run: |
+          echo "::notice title=HACS validation VOID::this repository is private, so HACS cannot read it"
+          echo "HACS reads hacs.json and manifest.json from raw.githubusercontent.com with NO"
+          echo "Authorization header, in CI and in a live install alike, so a private repository"
+          echo "404s. This step is a VOID, not a pass: nothing about HACS compatibility was"
+          echo "verified here. See jrackerby/HA#483."
+
+      - uses: hacs/action@main
+        if: ${{ !github.event.repository.private }}
+        with:
+          category: integration
+          # DEFAULT-STORE INCLUSION CHECKS, ignored deliberately. These are
+          # personal estate components installed as CUSTOM repositories; they
+          # will not be submitted to the HACS default store. None of hacs/action's
+          # validators run at install time either -- validate/manager.py's
+          # async_run_repository_checks returns immediately unless
+          # hacs.system.action -- so they gate store inclusion and nothing else.
+          # brands additionally needs artwork committed here or an accepted PR
+          # against home-assistant/brands; topics and license are repository
+          # metadata, not code, and are worth revisiting only if these repos
+          # ever go public (jrackerby/HA#483).
+          ignore: brands topics license

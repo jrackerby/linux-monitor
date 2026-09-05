@@ -1,0 +1,151 @@
+"""Constants for the Host Monitor integration.
+
+WHAT THIS IS. Generic OS-health monitoring for a Debian host: CPU, memory,
+disk, temperature, load, uptime, kernel currency, pending updates — read
+entirely over a read-only SSH connection. AGENTLESS: nothing is installed on
+a monitored host and no daemon has to be running on it. Modeled on
+custom_components/kiosk_pi's coordinator/dwell shape (same "never raise
+UpdateFailed" honesty rule, same __END__ marker discipline, same
+log-once-at-the-crossing streak logic), deliberately without kiosk_pi's
+kiosk-specific concepts: no Chromium, no display, no dashboard assignment,
+no kiosk.sh config-drift assertion, no remote patch/reboot.
+
+0.3.0, GH-470: THE GLANCES DAEMON DEPENDENCY IS GONE, and with it the whole
+second transport. Every reading that used to come from a Glances REST daemon
+on :61208 now comes from /proc, /sys, findmnt, nproc and /etc/os-release over
+the SSH connection this integration already opened for the kernel readback —
+one transport, no agent, nothing to keep running on the host.
+
+WHY, measured 2026-09-01: prodhost01 read fully unavailable. Its Glances was
+running in XML-RPC mode bound to loopback, so the REST transport was dead —
+and the `monitor` account did not exist on that host at all, so the SSH
+transport had never worked either. The entry was Glances-only in practice
+from the day it was created and one daemon misconfiguration took the whole
+host dark. An agent that must be installed, configured and kept running is a
+failure mode; a file in /proc is not. kiosk_pi dropped Glances entirely in
+its 0.12.0 (GH-467) and this integration was its last consumer.
+
+ONE TRANSPORT, SAID OUT LOUD. There is no longer anything to combine, so the
+glances_fails counter, the min(glances_fails, ssh_fails) floor in the health
+sensor's _reasons(), and the glances_ok / glances_missed_polls attributes are
+all removed rather than left reporting a constant. `online` and `ssh_ok` are
+now the same fact and only ssh_ok is published. Same deliberate collapse
+kiosk_pi 0.12.0 made for the same reason.
+
+NO SUDO, ANYWHERE, AND THAT IS A CONSTRAINT ON THE SOURCES. The monitor
+account is granted none (verified live on devhost01 2026-09-01: `sudo -n true`
+answers "a password is required"). Every path read by FAST_CMD and SLOW_CMD
+is world-readable: /proc/stat, /proc/meminfo, /proc/loadavg, /proc/uptime,
+/proc/cpuinfo, /etc/os-release, /sys/class/hwmon, /sys/class/thermal, and
+findmnt/nproc/dpkg-query/apt-list, all confirmed readable unprivileged on
+both the amd64 hosts and the Pis.
+
+NO REMOTE PATCH, INSTALL OR REBOOT SUPPORT, DELIBERATELY, UNLIKE kiosk_pi's
+update.py. devhost01 — this integration's first host — is a Claude Code
+working host; a remote reboot/upgrade path into the machine driving the
+session it is a part of is a footgun this integration does not need to
+carry. This stays true fleet-wide, including for the kiosk hosts: kiosk_pi's
+own update.py is the ONLY remote-patch surface for those, scoped to the four
+hosts that actually need it and gated per-entry behind allow_install.
+Read-only for every host here, no exceptions without arguing a specific one
+on its own.
+
+0.2.0, maintainer ruling, standing: THIS INTEGRATION ALSO COVERS THE FOUR KIOSK PI HOSTS'
+GENERIC OS HEALTH. kiosk_pi's own coordinator used to read cpu/mem/disk/temp/
+load and expose kernel/apt facts alongside its kiosk-specific ones — the
+un-deduplicated half of the split this integration's design already
+described. kiosk_pi 0.12.0 removed all of that; each kiosk Pi gets its own
+host_monitor entry instead, using the SAME ssh_user/ssh_key kiosk_pi already
+had working access with (CONF_SSH_USER/CONF_SSH_KEY are per-entry, not the
+DEFAULT_* below — a fresh "monitor" credential was not provisioned onto
+hardware already reachable). Forcing a non-kiosk host into kiosk_pi would
+trip its KioskPiConfigDrift binary_sensor permanently (kiosk.sh does not
+exist there) and clutter the device with entities that can never read
+anything; the same reasoning is why this split runs the other direction
+rather than merging everything into one entry.
+
+DHCP DISCOVERY IS NOT OFFERED. kiosk_pi's dhcp hostname-glob discovery exists
+to keep an operator from having to type in five Pis; a generic host has no
+naming convention to glob on, so every entry here is added by hand, which
+is also the safer default — nothing gets auto-enrolled as monitored.
+"""
+
+from __future__ import annotations
+
+from datetime import timedelta
+
+DOMAIN = "host_monitor"
+
+CONF_HOST = "host"
+CONF_HOSTNAME = "hostname"
+CONF_SSH_USER = "ssh_user"
+CONF_SSH_KEY = "ssh_key"
+CONF_OFFLINE_EXPECTED = "offline_expected"
+
+# Entry-data key from VERSION 1, when a Glances REST daemon was a second
+# transport. Named here ONLY so async_migrate_entry can strip it; nothing
+# reads it and no code path honours a value found under it. Do not
+# reintroduce it as a live option — see this file's header.
+LEGACY_CONF_GLANCES_PORT = "glances_port"
+
+DEFAULT_SSH_USER = "monitor"
+DEFAULT_SSH_KEY = "/config/.ssh/host_monitor_key"
+DEFAULT_KNOWN_HOSTS = "/config/.ssh/known_hosts"
+
+UPDATE_INTERVAL = timedelta(seconds=60)
+SLOW_INTERVAL = timedelta(hours=6)
+
+# Same reasoning as kiosk_pi/const.py SLOW_RETRY_INTERVAL: a failed slow read
+# must not park apt/kernel reporting at unknown until the next 6h window.
+SLOW_RETRY_INTERVAL = timedelta(minutes=15)
+
+SSH_FAST_TIMEOUT = 15
+SSH_SLOW_TIMEOUT = 60
+
+# CPU PERCENT IS THE ONE READING THAT NEEDS TWO SAMPLES. /proc/stat is
+# cumulative jiffies since boot, so a percentage is a delta between two
+# instants and a single read can only ever produce a since-boot average.
+#
+# TWO SAMPLES IN ONE SSH ROUND TRIP, not a delta carried across polls.
+# Both were viable; this is why this one:
+#   - It is honest on the very first poll. The carried-delta form has no
+#     previous sample after any HA restart or entry reload and MUST report
+#     None for a full minute — and a None that has to be remembered to be
+#     produced is exactly the stale-zero shape this integration's comments
+#     exist to prevent. One wrong `or 0` and a restart reads 0% CPU.
+#   - It reports the same QUANTITY Glances did. A delta across the 60s poll
+#     interval is a 60-second mean; Glances sampled over its own few-second
+#     refresh. Swapping the transport must not silently change what the
+#     series means, because ~5 weeks of recorder history is graphed against
+#     it and nothing would mark the discontinuity.
+#   - It carries no state, so there is no restart hole to reason about.
+# The cost is this many seconds of a 60s budget, inside one connection that
+# is already paid for, and well inside SSH_FAST_TIMEOUT.
+CPU_SAMPLE_SECS = 1
+
+# Consecutive missed polls before a TRANSPORT miss counts as a health problem.
+# Same value and same reasoning as kiosk_pi: three minutes is longer than a
+# routine reboot or one transient ssh timeout.
+TRANSPORT_FAIL_DWELL = 3
+
+# Health ladder. CPU busy percent, never load.min1 (a multi-core host
+# saturates load well past 1.0 under normal use; see kiosk_pi/const.py for
+# the measured defect this avoids repeating).
+CPU_PROBLEM_PCT = 90.0
+DISK_PROBLEM_PCT = 90.0
+
+# hwmon `name` values that are a CPU package/die temperature, worst-first by
+# preference. Measured 2026-09-01: coretemp on the amd64 hosts (hwmon2 on
+# devhost01, temp1_input labelled "Package id 0"), cpu_thermal on every Pi
+# (hwmon0). NOT a guess — an Intel box also exposes pch_cannonlake, hp,
+# ucsi_source_psy_* and iwlwifi_1 as hwmon devices, and iwlwifi_1's
+# temp1_input answers ENODATA when the radio is idle, so "first hwmon with a
+# temp input" would read the wrong chip or fail outright.
+CPU_HWMON_NAMES = (
+    "coretemp",
+    "k10temp",
+    "zenpower",
+    "cpu_thermal",
+    "cpu-thermal",
+    "soc_thermal",
+)

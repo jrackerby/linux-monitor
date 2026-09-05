@@ -1,0 +1,56 @@
+name: release
+
+# HACS installs and upgrades from RELEASES. All seven component repos had zero
+# tags and zero releases (GH-483), so there was nothing for it to install even
+# once the packaging was right.
+#
+# The trigger is manifest.json's own version field, because that is the number
+# Home Assistant already shows for the integration -- a separate release ritual
+# would be a second version to keep in sync, and it would drift.
+
+on:
+  push:
+    branches: [master]
+    paths: [manifest.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: read the version and decide whether it is new
+        id: v
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import json;print(json.load(open("manifest.json"))["version"])')"
+          # Empty or missing would tag "v" and poison the tag namespace.
+          test -n "$version" || { echo "CANNOT RUN: manifest.json has no version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Idempotent by design: this fires on ANY push touching manifest.json,
+          # including one that edits a URL and leaves the version alone. Tagging
+          # is the thing that must not repeat, so the existence of the tag -- not
+          # the diff -- is what decides.
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "v$version already tagged; nothing to release"
+            echo "new=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: tag and release
+        if: steps.v.outputs.new == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" --title "v$VERSION" --generate-notes

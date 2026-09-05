@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a monitored host",
+        "description": "One entry per host. Nothing is installed on the host and no agent has to be running on it — every reading is taken over SSH. The hostname is read from the host itself using the SSH credential below; type it in for a host that is deliberately powered down.",
+        "data": {
+          "host": "IP address",
+          "hostname": "Hostname (leave blank to auto-detect)",
+          "ssh_user": "SSH user",
+          "ssh_key": "SSH private key path",
+          "offline_expected": "Intentionally offline"
+        },
+        "data_description": {
+          "ssh_user": "A read-only account. It needs no sudo — every value this integration collects comes from world-readable files.",
+          "offline_expected": "Set for a host that is deliberately powered down. It will be named and dispositioned rather than reported as a fault, and no polling is attempted."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not read the hostname over SSH. Check the address, that the account exists on that host, and that its public key is in the account's authorized_keys. If the host is deliberately powered down, tick 'Intentionally offline' and supply the hostname.",
+      "hostname_required_offline": "An intentionally-offline host cannot be probed for its name — enter it manually."
+    },
+    "abort": {
+      "already_configured": "That host is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Host Monitor options",
+        "data": {
+          "offline_expected": "Intentionally offline"
+        },
+        "data_description": {
+          "offline_expected": "When set, the host is not polled and its health reports OK rather than a fault."
+        }
+      }
+    }
+  },
+  "entity": {}
+}

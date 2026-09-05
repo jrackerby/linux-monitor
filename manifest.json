@@ -1,0 +1,15 @@
+{
+  "domain": "host_monitor",
+  "name": "Host Monitor",
+  "codeowners": [
+    "@jrackerby"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/jrackerby/host-monitor",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/jrackerby/host-monitor/issues",
+  "requirements": [],
+  "version": "0.3.0"
+}
