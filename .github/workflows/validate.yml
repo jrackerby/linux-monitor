@@ -6,6 +6,7 @@ name: validate
 
 on:
   push:
+    branches: [master]
   pull_request:
   schedule:
     # HACS and hassfest both move under us. A repo that only validates on push
@@ -17,9 +18,17 @@ on:
 env:
   DOMAIN: linux_monitor
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   hassfest:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       # Into a subdirectory ON PURPOSE. The step below builds the layout
       # hassfest expects AT THE WORKSPACE ROOT, and it cannot do that if the
@@ -55,6 +64,7 @@ jobs:
 
   hacs:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
