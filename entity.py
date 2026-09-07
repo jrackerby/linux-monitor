@@ -8,10 +8,10 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import HostMonitorCoordinator
+from .coordinator import LinuxMonitorCoordinator
 
 
-class HostMonitorEntity(CoordinatorEntity[HostMonitorCoordinator]):
+class LinuxMonitorEntity(CoordinatorEntity[LinuxMonitorCoordinator]):
     """_attr_has_entity_name makes the entity_id <device_slug>_<key> --
     sensor.devhost01_cpu -- same reasoning as kiosk_pi/entity.py.
 
@@ -23,7 +23,7 @@ class HostMonitorEntity(CoordinatorEntity[HostMonitorCoordinator]):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: HostMonitorCoordinator, key: str) -> None:
+    def __init__(self, coordinator: LinuxMonitorCoordinator, key: str) -> None:
         super().__init__(coordinator)
         self._key = key
         self._attr_unique_id = f"{coordinator.hostname.lower()}_{key}"

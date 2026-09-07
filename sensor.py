@@ -28,8 +28,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
-from . import HostMonitorConfigEntry
-from .entity import HostMonitorEntity
+from . import LinuxMonitorConfigEntry
+from .entity import LinuxMonitorEntity
 
 
 def _m(data: dict[str, Any], key: str) -> Any:
@@ -67,13 +67,13 @@ def _apt_age_hours(data: dict[str, Any]) -> float | None:
 
 
 @dataclass(frozen=True, kw_only=True)
-class HostMonitorSensorDescription(SensorEntityDescription):
+class LinuxMonitorSensorDescription(SensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], Any]
     attrs_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
-SENSORS: tuple[HostMonitorSensorDescription, ...] = (
-    HostMonitorSensorDescription(
+SENSORS: tuple[LinuxMonitorSensorDescription, ...] = (
+    LinuxMonitorSensorDescription(
         key="cpu",
         name="CPU",
         native_unit_of_measurement=PERCENTAGE,
@@ -84,7 +84,7 @@ SENSORS: tuple[HostMonitorSensorDescription, ...] = (
         # the alternative of delta-ing across polls.
         value_fn=lambda d: _m(d, "cpu_percent"),
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="memory",
         name="Memory",
         native_unit_of_measurement=PERCENTAGE,
@@ -92,7 +92,7 @@ SENSORS: tuple[HostMonitorSensorDescription, ...] = (
         suggested_display_precision=1,
         value_fn=lambda d: _m(d, "mem_percent"),
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="temperature",
         name="Temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -106,7 +106,7 @@ SENSORS: tuple[HostMonitorSensorDescription, ...] = (
         # const.py CPU_HWMON_NAMES exists to prevent.
         attrs_fn=lambda d: {"source": _m(d, "temp_source")},
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="disk",
         name="Disk",
         native_unit_of_measurement=PERCENTAGE,
@@ -118,7 +118,7 @@ SENSORS: tuple[HostMonitorSensorDescription, ...] = (
             if k in ("device_name", "fs_type", "mnt_point", "size", "used", "free")
         },
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="load_1m",
         name="Load average 1m",
         state_class=SensorStateClass.MEASUREMENT,
@@ -132,7 +132,7 @@ SENSORS: tuple[HostMonitorSensorDescription, ...] = (
             "cores": _m(d, "cores"),
         },
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="uptime",
         name="Uptime",
         device_class=SensorDeviceClass.TIMESTAMP,
@@ -142,26 +142,26 @@ SENSORS: tuple[HostMonitorSensorDescription, ...] = (
         # back into a duration; that parse, and its failure mode, are gone.
         value_fn=lambda d: _m(d, "boot_time"),
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="kernel_running",
         name="Kernel running",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda d: _m(d, "kernel"),
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="kernel_installed",
         name="Kernel installed",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda d: (d.get("slow") or {}).get("KERNEL_INSTALLED") or None,
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="updates_pending",
         name="Updates pending",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda d: _int_or_none((d.get("slow") or {}).get("UPGRADABLE")),
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="security_updates_pending",
         name="Security updates pending",
         state_class=SensorStateClass.MEASUREMENT,
@@ -171,7 +171,7 @@ SENSORS: tuple[HostMonitorSensorDescription, ...] = (
             "packages": (d.get("slow") or {}).get("SECURITY_PKGS") or None,
         },
     ),
-    HostMonitorSensorDescription(
+    LinuxMonitorSensorDescription(
         key="apt_lists_age",
         name="Apt lists age",
         native_unit_of_measurement="h",
@@ -183,10 +183,10 @@ SENSORS: tuple[HostMonitorSensorDescription, ...] = (
 )
 
 
-class HostMonitorSensor(HostMonitorEntity, SensorEntity):
-    entity_description: HostMonitorSensorDescription
+class LinuxMonitorSensor(LinuxMonitorEntity, SensorEntity):
+    entity_description: LinuxMonitorSensorDescription
 
-    def __init__(self, coordinator, description: HostMonitorSensorDescription) -> None:
+    def __init__(self, coordinator, description: LinuxMonitorSensorDescription) -> None:
         super().__init__(coordinator, description.key)
         self.entity_description = description
 
@@ -206,7 +206,7 @@ class HostMonitorSensor(HostMonitorEntity, SensorEntity):
         return fn(self.coordinator.data or {})
 
 
-class HostMonitorRebootCount(HostMonitorEntity, RestoreEntity, SensorEntity):
+class LinuxMonitorRebootCount(LinuxMonitorEntity, RestoreEntity, SensorEntity):
     """Counts uptime resets, not polls -- see coordinator._async_update_data
     for why the health binary_sensor's dwell/streak misses these (GH-402).
     Restored across an HA restart of its own so a crash-loop mid-diagnosis
@@ -244,11 +244,11 @@ class HostMonitorRebootCount(HostMonitorEntity, RestoreEntity, SensorEntity):
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: HostMonitorConfigEntry,
+    entry: LinuxMonitorConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(
-        [HostMonitorSensor(coordinator, description) for description in SENSORS]
-        + [HostMonitorRebootCount(coordinator)]
+        [LinuxMonitorSensor(coordinator, description) for description in SENSORS]
+        + [LinuxMonitorRebootCount(coordinator)]
     )

@@ -30,20 +30,20 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import HostMonitorConfigEntry
+from . import LinuxMonitorConfigEntry
 from .const import CPU_PROBLEM_PCT, DISK_PROBLEM_PCT, TRANSPORT_FAIL_DWELL
-from .entity import HostMonitorEntity
+from .entity import LinuxMonitorEntity
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: HostMonitorConfigEntry,
+    entry: LinuxMonitorConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    async_add_entities([HostMonitorHealth(entry.runtime_data)])
+    async_add_entities([LinuxMonitorHealth(entry.runtime_data)])
 
 
-class HostMonitorHealth(HostMonitorEntity, BinarySensorEntity):
+class LinuxMonitorHealth(LinuxMonitorEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_name = "Health"
 

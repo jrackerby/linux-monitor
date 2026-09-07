@@ -28,7 +28,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Host Monitor options",
+        "title": "Linux Monitor options",
         "data": {
           "offline_expected": "Intentionally offline"
         },

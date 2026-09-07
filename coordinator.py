@@ -366,11 +366,11 @@ def _metrics(kv: dict[str, str] | None) -> dict[str, Any]:
     }
 
 
-class HostMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(
             hass, _LOGGER,
-            name=f"host_monitor:{entry.data[CONF_HOSTNAME]}",
+            name=f"linux_monitor:{entry.data[CONF_HOSTNAME]}",
             update_interval=UPDATE_INTERVAL,
         )
         self.entry = entry

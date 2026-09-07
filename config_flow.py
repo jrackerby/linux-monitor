@@ -1,4 +1,4 @@
-"""Config flow for Host Monitor.
+"""Config flow for Linux Monitor.
 
 No DHCP step -- see const.py. Every host is added by hand.
 
@@ -100,7 +100,7 @@ async def _probe_hostname(
     return None
 
 
-class HostMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
+class LinuxMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
     # 2: glances_port dropped from entry data (GH-470). See
     # __init__.async_migrate_entry.
     VERSION = 2
@@ -161,10 +161,10 @@ class HostMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(entry: ConfigEntry) -> OptionsFlow:
-        return HostMonitorOptionsFlow()
+        return LinuxMonitorOptionsFlow()
 
 
-class HostMonitorOptionsFlow(OptionsFlow):
+class LinuxMonitorOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:

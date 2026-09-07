@@ -1,4 +1,4 @@
-"""Constants for the Host Monitor integration.
+"""Constants for the Linux Monitor integration.
 
 WHAT THIS IS. Generic OS-health monitoring for a Debian host: CPU, memory,
 disk, temperature, load, uptime, kernel currency, pending updates — read
@@ -9,6 +9,24 @@ UpdateFailed" honesty rule, same __END__ marker discipline, same
 log-once-at-the-crossing streak logic), deliberately without kiosk_pi's
 kiosk-specific concepts: no Chromium, no display, no dashboard assignment,
 no kiosk.sh config-drift assertion, no remote patch/reboot.
+
+0.4.0, GH-639: RENAMED FROM host_monitor TO linux_monitor (Joel, ruling).
+The name was the point: after the GH-467 split, kiosk_pi is kiosk-only and
+this component owns generic OS health for every Linux host, including hosts
+that are not kiosks. `host_monitor` described what it was.
+
+THE DOMAIN IS THE ONLY THING THAT MOVED, AND IT MOVED OUTSIDE THIS CODE.
+A config entry's domain is its dispatch key, so no in-component hook can
+change it — `async_migrate_entry` never runs for an entry whose integration
+no longer exists. The rename was therefore completed by an offline rewrite of
+the three registries (`core.config_entries`, `core.device_registry`,
+`core.entity_registry`) with HA stopped, carrying every existing row across
+under the new name. unique_id is `<hostname>_<key>` and never contained the
+domain, so it did not need to move; entity_id did not move either, which is
+the whole point of doing it that way rather than letting HA re-register 78
+entities beside the originals as `_2` duplicates. Consumers name entity_ids,
+so nothing downstream was repointed: household_state's INTEGRITY axis keys on
+config-entry SHAPE and names no domain, and the dashboard fleet reads ids.
 
 0.3.0, GH-470: THE GLANCES DAEMON DEPENDENCY IS GONE, and with it the whole
 second transport. Every reading that used to come from a Glances REST daemon
@@ -55,7 +73,7 @@ GENERIC OS HEALTH. kiosk_pi's own coordinator used to read cpu/mem/disk/temp/
 load and expose kernel/apt facts alongside its kiosk-specific ones — the
 un-deduplicated half of the split this integration's design already
 described. kiosk_pi 0.12.0 removed all of that; each kiosk Pi gets its own
-host_monitor entry instead, using the SAME ssh_user/ssh_key kiosk_pi already
+linux_monitor entry instead, using the SAME ssh_user/ssh_key kiosk_pi already
 had working access with (CONF_SSH_USER/CONF_SSH_KEY are per-entry, not the
 DEFAULT_* below — a fresh "monitor" credential was not provisioned onto
 hardware already reachable). Forcing a non-kiosk host into kiosk_pi would
@@ -74,7 +92,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-DOMAIN = "host_monitor"
+DOMAIN = "linux_monitor"
 
 CONF_HOST = "host"
 CONF_HOSTNAME = "hostname"
@@ -89,6 +107,13 @@ CONF_OFFLINE_EXPECTED = "offline_expected"
 LEGACY_CONF_GLANCES_PORT = "glances_port"
 
 DEFAULT_SSH_USER = "monitor"
+# DELIBERATELY NOT RENAMED WITH THE DOMAIN (GH-639). This is a path to a
+# private key that exists on the HA host under this exact name, not a
+# reference to the old domain. Two live entries (devhost01, prodhost01) read
+# it; the four kiosk hosts use /config/.ssh/kiosk_key instead. Renaming the
+# string without moving the file breaks SSH auth for those two hosts, and
+# moving a credential to make a name tidy buys nothing. The filename is
+# historical and stays that way.
 DEFAULT_SSH_KEY = "/config/.ssh/host_monitor_key"
 DEFAULT_KNOWN_HOSTS = "/config/.ssh/known_hosts"
 

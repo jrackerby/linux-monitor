@@ -1,4 +1,4 @@
-# Host Monitor
+# Linux Monitor
 
 Health and reachability for the estate's Linux hosts, **entirely over SSH**.
 
@@ -23,23 +23,23 @@ disappearance rather than tolerating it.
 
 ## Install
 
-**Via HACS.** HACS → ⋮ → *Custom repositories* → `https://github.com/jrackerby/host-monitor`,
+**Via HACS.** HACS → ⋮ → *Custom repositories* → `https://github.com/jrackerby/linux-monitor`,
 category **Integration**. Install, restart Home Assistant, then add it under
-*Settings → Devices & Services → Add Integration → "Host Monitor"*.
+*Settings → Devices & Services → Add Integration → "Linux Monitor"*.
 
 The integration lives at the repository **root**, not under
 `custom_components/`. `hacs.json` declares `content_in_root: true`, so HACS
-copies the root into `/config/custom_components/host_monitor/`.
+copies the root into `/config/custom_components/linux_monitor/`.
 
 > **That path has two owners today.** `jrackerby/HA` also submodules this repo
-> as `custom_components/host_monitor` and writes the same directory on deploy. Until
+> as `custom_components/linux_monitor` and writes the same directory on deploy. Until
 > that cutover is settled (jrackerby/HA#483), a HACS install and a `git push ha
 > master` will fight over it — install here only if you are not deploying this
 > component from `jrackerby/HA`.
 
 ## Development
 
-Issues and feature requests: **[jrackerby/host-monitor/issues](https://github.com/jrackerby/host-monitor/issues)**.
+Issues and feature requests: **[jrackerby/linux-monitor/issues](https://github.com/jrackerby/linux-monitor/issues)**.
 
 CI runs [hassfest](https://developers.home-assistant.io/blog/2020/04/16/hassfest)
 and HACS validation on every push. hassfest scans `custom_components/*` and
