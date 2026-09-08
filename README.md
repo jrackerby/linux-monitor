@@ -1,6 +1,6 @@
 # Linux Monitor
 
-Health and reachability for the estate's Linux hosts, **entirely over SSH**.
+Health and reachability for your Linux hosts, **entirely over SSH**.
 
 An earlier version polled a Glances daemon; that is gone. Every reading now
 comes over the SSH transport, so there is nothing to install on a monitored
