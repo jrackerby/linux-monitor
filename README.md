@@ -2,10 +2,10 @@
 
 Health and reachability for the estate's Linux hosts, **entirely over SSH**.
 
-GH-470 dropped the Glances daemon. Every reading now comes over the SSH
-transport, so there is nothing to install on a monitored host beyond an
-authorised key — which matters for hosts whose filesystems are rebuilt on
-update. `LEGACY_CONF_GLANCES_PORT` survives only to migrate config entries
+An earlier version polled a Glances daemon; that is gone. Every reading now
+comes over the SSH transport, so there is nothing to install on a monitored
+host beyond an authorised key — which matters for hosts whose filesystems are
+rebuilt on update. `LEGACY_CONF_GLANCES_PORT` survives only to migrate config entries
 created before that change.
 
 ## What it creates
@@ -31,12 +31,6 @@ The integration lives at the repository **root**, not under
 `custom_components/`. `hacs.json` declares `content_in_root: true`, so HACS
 copies the root into `/config/custom_components/linux_monitor/`.
 
-> **That path has two owners today.** `jrackerby/HA` also submodules this repo
-> as `custom_components/linux_monitor` and writes the same directory on deploy. Until
-> that cutover is settled (jrackerby/HA#483), a HACS install and a `git push ha
-> master` will fight over it — install here only if you are not deploying this
-> component from `jrackerby/HA`.
-
 ## Development
 
 Issues and feature requests: **[jrackerby/linux-monitor/issues](https://github.com/jrackerby/linux-monitor/issues)**.
@@ -45,7 +39,7 @@ CI runs [hassfest](https://developers.home-assistant.io/blog/2020/04/16/hassfest
 and HACS validation on every push. hassfest scans `custom_components/*` and
 takes no path argument, so `.github/workflows/validate.yml` stages this repo
 into that layout before invoking it; the repo itself stays root-layout because
-`jrackerby/HA` submodules it at that path.
+`hacs.json` declares `content_in_root: true`.
 
 Pushing a `manifest.json` whose `version` has changed tags and publishes a
 release automatically — that is the only supported way to cut one.
