@@ -98,14 +98,18 @@ jobs:
         if: ${{ !github.event.repository.private }}
         with:
           category: integration
-          # DEFAULT-STORE INCLUSION CHECKS, ignored deliberately. These are
-          # personal estate components installed as CUSTOM repositories; they
-          # will not be submitted to the HACS default store. None of hacs/action's
-          # validators run at install time either -- validate/manager.py's
+          # These are DEFAULT-STORE INCLUSION checks. None of hacs/action's
+          # validators run at install time -- validate/manager.py's
           # async_run_repository_checks returns immediately unless
-          # hacs.system.action -- so they gate store inclusion and nothing else.
-          # brands additionally needs artwork committed here or an accepted PR
-          # against home-assistant/brands; topics and license are repository
-          # metadata, not code, and are worth revisiting only if these repos
-          # ever go public (jrackerby/HA#483).
-          ignore: brands topics license
+          # hacs.system.action -- so they gate store inclusion, not whether a
+          # custom-repository install works. They are still worth running: they
+          # are the only automated read on this repo's public presentation.
+          #
+          # `topics` and `license` used to be ignored here because a private
+          # repo had neither. Both are set now, so both are ENFORCED -- going
+          # on ignoring a check that would pass is how a gate stops being one.
+          #
+          # `brands` stays ignored: it needs either brand/icon.png committed
+          # here or an accepted PR against home-assistant/brands, and until one
+          # of those exists the check can only ever fail.
+          ignore: brands
