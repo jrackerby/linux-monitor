@@ -7,8 +7,9 @@ a monitored host and no daemon has to be running on it. Modeled on
 custom_components/kiosk_pi's coordinator/dwell shape (same "never raise
 UpdateFailed" honesty rule, same __END__ marker discipline, same
 log-once-at-the-crossing streak logic), deliberately without kiosk_pi's
-kiosk-specific concepts: no Chromium, no display, no dashboard assignment,
-no kiosk.sh config-drift assertion, no remote patch/reboot.
+kiosk-specific concepts: no Chromium, no display, no dashboard assignment
+and no kiosk.sh config-drift assertion. Remote patch and reboot ARE here as
+of 0.5.0, off by default and per entry -- see the reversal note below.
 
 0.4.0, GH-639: RENAMED FROM host_monitor TO linux_monitor (Joel, ruling).
 The name was the point: after the GH-467 split, kiosk_pi is kiosk-only and
@@ -50,23 +51,44 @@ all removed rather than left reporting a constant. `online` and `ssh_ok` are
 now the same fact and only ssh_ok is published. Same deliberate collapse
 kiosk_pi 0.12.0 made for the same reason.
 
-NO SUDO, ANYWHERE, AND THAT IS A CONSTRAINT ON THE SOURCES. The monitor
-account is granted none (verified live on devhost01 2026-09-01: `sudo -n true`
-answers "a password is required"). Every path read by FAST_CMD and SLOW_CMD
-is world-readable: /proc/stat, /proc/meminfo, /proc/loadavg, /proc/uptime,
-/proc/cpuinfo, /etc/os-release, /sys/class/hwmon, /sys/class/thermal, and
-findmnt/nproc/dpkg-query/apt-list, all confirmed readable unprivileged on
-both the amd64 hosts and the Pis.
+NO SUDO ON ANY POLLING PATH, AND THAT IS A CONSTRAINT ON THE SOURCES. Every
+path read by FAST_CMD and SLOW_CMD is world-readable: /proc/stat,
+/proc/meminfo, /proc/loadavg, /proc/uptime, /proc/cpuinfo, /etc/os-release,
+/sys/class/hwmon, /sys/class/thermal, and findmnt/nproc/dpkg-query/apt-list,
+all confirmed readable unprivileged on both the amd64 hosts and the Pis. That
+is a design rule, not an accident of provisioning, and it does not move:
+everything this integration collects on its own schedule stays unprivileged.
 
-NO REMOTE PATCH, INSTALL OR REBOOT SUPPORT, DELIBERATELY, UNLIKE kiosk_pi's
-update.py. devhost01 — this integration's first host — is a Claude Code
-working host; a remote reboot/upgrade path into the machine driving the
-session it is a part of is a footgun this integration does not need to
-carry. This stays true fleet-wide, including for the kiosk hosts: kiosk_pi's
-own update.py is the ONLY remote-patch surface for those, scoped to the four
-hosts that actually need it and gated per-entry behind allow_install.
-Read-only for every host here, no exceptions without arguing a specific one
-on its own.
+0.5.0, GH linux-monitor#3: REMOTE PATCH AND REBOOT SUPPORT LANDED. THIS
+REVERSES THIS FILE'S OWN EARLIER POSITION, WHICH READ "NO REMOTE PATCH,
+INSTALL OR REBOOT SUPPORT, DELIBERATELY, UNLIKE kiosk_pi's update.py …
+read-only for every host here, no exceptions without arguing a specific one
+on its own." Labelled as a reversal rather than edited away, because the
+earlier text was right about the risk and the argument it demanded is the
+thing that changed: the maintainer asked for update monitoring and remote
+system updates here, and named kiosk_pi's implementation as the source to
+take them from. That is the specific argument, and it is the owner's.
+
+WHAT THE EARLIER POSITION WAS PROTECTING, AND HOW IT SURVIVES. devhost01 —
+this integration's first host — is a Claude Code working host, and a remote
+reboot/upgrade path into the machine driving the session using it is a
+footgun. Three things keep that closed rather than reopened:
+
+  1. The capability is OFF by default and opted in PER ENTRY
+     (CONF_ALLOW_INSTALL). Held off, neither control exists at all.
+  2. It needs passwordless sudo, which the monitor account does not have --
+     measured live on devhost01 2026-09-01, `sudo -n true` answered "a
+     password is required". That measurement is now load-bearing rather than
+     merely descriptive: it is why the option cannot be turned on there by
+     accident.
+  3. Turning it on PROBES for that sudo over the entry's own account, key and
+     address, and refuses to save when the answer is no -- or when the host
+     could not be asked at all. An unreachable host is not a yes.
+
+So the read-only default is unchanged for every host; what moved is that a
+host CAN now be argued into patchability one entry at a time, on the host's
+own evidence, instead of the whole capability living in a kiosk-specific
+integration because the kiosks needed it first.
 
 0.2.0, maintainer ruling, standing: THIS INTEGRATION ALSO COVERS THE FOUR KIOSK PI HOSTS'
 GENERIC OS HEALTH. kiosk_pi's own coordinator used to read cpu/mem/disk/temp/
