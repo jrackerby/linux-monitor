@@ -12,7 +12,7 @@
           "offline_expected": "Intentionally offline"
         },
         "data_description": {
-          "ssh_user": "A read-only account. It needs no sudo — every value this integration collects comes from world-readable files.",
+          "ssh_user": "A read-only account is enough for monitoring — every value collected on a schedule comes from a world-readable file or an unprivileged query. Passwordless sudo is needed only if you later turn on remote patching and reboot for this host, and that option probes for it before it will accept.",
           "offline_expected": "Set for a host that is deliberately powered down. It will be named and dispositioned rather than reported as a fault, and no polling is attempted."
         }
       }
@@ -30,12 +30,18 @@
       "init": {
         "title": "Linux Monitor options",
         "data": {
-          "offline_expected": "Intentionally offline"
+          "offline_expected": "Intentionally offline",
+          "allow_install": "Allow remote patching and reboot"
         },
         "data_description": {
-          "offline_expected": "When set, the host is not polled and its health reports OK rather than a fault."
-        }
+          "offline_expected": "When set, the host is not polled and its health reports OK rather than a fault.",
+          "allow_install": "Off by default. Turning it on adds an Install button for this host in Home Assistant's Updates panel, puts it in the update-all path there, and creates a Reboot host button. Both need passwordless sudo for this entry's SSH account, which is checked over that exact account and key before the setting is saved."
+        },
+        "description": "Remote patching runs apt-get upgrade — never full-upgrade, which can remove packages — and reboots the host only if apt exits 0."
       }
+    },
+    "error": {
+      "no_sudo": "This host's SSH account cannot run sudo without a password, or the host could not be reached to ask. Remote patching was NOT enabled — an unreachable host is not a yes. Grant passwordless sudo to that account on the host, or leave the option off and patch it by hand."
     }
   },
   "entity": {}

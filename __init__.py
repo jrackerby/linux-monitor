@@ -13,13 +13,27 @@ from .coordinator import LinuxMonitorCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    # BUTTON forwards unconditionally and sets up nothing when the entry has
+    # not opted in to privileged action -- the decision lives in button.py,
+    # beside the entity it gates, rather than in a conditional platform list
+    # that would silently stop reloading when the option is turned on.
+    Platform.BUTTON,
+    Platform.SENSOR,
+    Platform.UPDATE,
+]
 
 type LinuxMonitorConfigEntry = ConfigEntry[LinuxMonitorCoordinator]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: LinuxMonitorConfigEntry) -> bool:
     coordinator = LinuxMonitorCoordinator(hass, entry)
+    # BEFORE the first refresh, never after. That poll writes a first-seen
+    # timestamp for every pending security package, so loading the persisted
+    # clock afterwards would be overwritten by it and every patch age would
+    # reset to zero on every Home Assistant restart.
+    await coordinator.async_load_pending()
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -62,5 +76,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: LinuxMonitorConfigEntry
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: LinuxMonitorConfigEntry) -> None:
-    """offline_expected lives in options; a reload makes it take effect."""
+    """offline_expected and allow_install both live in options; a reload makes
+    either take effect. allow_install NEEDS the reload rather than merely
+    benefiting from one: it decides whether the update entity advertises
+    INSTALL and whether the reboot button is created at all, and both of those
+    are read once, at platform setup."""
     await hass.config_entries.async_reload(entry.entry_id)

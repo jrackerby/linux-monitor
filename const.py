@@ -100,6 +100,26 @@ CONF_SSH_USER = "ssh_user"
 CONF_SSH_KEY = "ssh_key"
 CONF_OFFLINE_EXPECTED = "offline_expected"
 
+# PER-HOST ALLOWLIST FOR PRIVILEGED ACTION. Default False, and it must stay
+# False by default: turning it on adds UpdateEntityFeature.INSTALL, which
+# lists this host in Home Assistant's global Updates panel with an Install
+# button and an update-all path, and it creates the Reboot host button. One
+# mis-click in a list of unrelated updates would then patch and reboot a
+# machine nobody was thinking about.
+#
+# ONE OPTION FOR BOTH CONTROLS, NOT TWO. They are the same grant: patching
+# chains a reboot on apt exit 0, and both need the same passwordless sudo on
+# the monitored host. Splitting them would imply a host could be allowed to
+# reboot but not patch when the underlying permission is identical, and a
+# gate that does not match what it gates is a gate nobody can reason about.
+#
+# The default SSH account (DEFAULT_SSH_USER) is a read-only one with NO sudo,
+# which is why config_flow probes `sudo -n true` over the entry's own
+# credential before it will store this as True — LAW 9: a setup check that
+# exercises a different channel than the one that will be used certifies
+# nothing.
+CONF_ALLOW_INSTALL = "allow_install"
+
 # Entry-data key from VERSION 1, when a Glances REST daemon was a second
 # transport. Named here ONLY so async_migrate_entry can strip it; nothing
 # reads it and no code path honours a value found under it. Do not
@@ -174,3 +194,55 @@ CPU_HWMON_NAMES = (
     "cpu-thermal",
     "soc_thermal",
 )
+
+
+# --- Privileged actions ----------------------------------------------------
+#
+# apt-get upgrade, NEVER full-upgrade. upgrade cannot remove a package and
+# cannot install a new one; full-upgrade can do both. A monitored host may be
+# headless, wall-mounted or in a rack nobody visits, and a package removal
+# that takes out the graphics or network stack is not a fault that can be
+# fixed from here. Packages held back by the safer form are REPORTED, never
+# silently escalated — a hold-back is a finding.
+#
+# INSTALL_TIMEOUT is its own budget and is deliberately not SSH_SLOW_TIMEOUT.
+# 60 s is sized for `apt list --upgradable`; unpacking ten packages on a Pi 3B
+# under load runs well past it, and a timeout mid-dpkg leaves a host
+# part-configured. This number is sized not to be hit.
+INSTALL_TIMEOUT = 900
+
+# The reboot tears down the transport it is issued over, so ssh cannot return
+# cleanly. This budget waits for the command to LAND, not to answer.
+REBOOT_TIMEOUT = 20
+
+# Default budget for a one-off command that is neither of the above.
+EXEC_TIMEOUT = 45
+
+# Budget for the `sudo -n true` probe the options flow runs. It is a login
+# plus one builtin; anything slower than this is a host that has no business
+# being handed an unattended apt run.
+SUDO_PROBE_TIMEOUT = 20
+
+# --- Security-patch AGE clock ----------------------------------------------
+#
+# A count of pending security updates is not a severity. Two packages found an
+# hour ago and two found forty days ago are the same number and different
+# problems.
+#
+# WHY THIS IS PERSISTED AND NOT DERIVED. The obvious source is last_changed on
+# the security-count sensor. It is wrong twice over: it re-arms whenever the
+# count moves, so 1 -> 2 restarts the clock on the package that was already
+# there, and HA resets it to restart time for every restored entity, so a host
+# forty days behind reads zero days old after any restart. Both failures are
+# permissive — they under-report age, which is the direction that hides the
+# problem.
+PENDING_STORE_VERSION = 1
+PENDING_STORE_KEY = "linux_monitor_pending"
+
+# THE STORE HOLDS ONE SHAPE TODAY AND MUST NOT GUESS IF THAT EVER CHANGES.
+# The payload carries a package -> first-seen mapping alongside
+# install_applied_at, discriminated by _v rather than by sniffing for a key
+# that looks like a package name: a dpkg package name cannot begin with an
+# underscore, so this key can never collide with one.
+STORE_SHAPE_KEY = "_v"
+STORE_SHAPE = 1

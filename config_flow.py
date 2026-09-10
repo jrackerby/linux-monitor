@@ -11,6 +11,13 @@ for the hostname and never touched ssh, so prodhost01 was created against a
 green, and the defect only surfaced weeks later when the daemon it WAS
 relying on broke. A config flow that does not exercise the transport is a
 config flow that certifies nothing.
+
+THE OPTIONS FLOW APPLIES THE SAME RULE TO THE SUDO GRANT. Turning on
+allow_install is a claim that this entry's SSH account may patch and reboot
+the host; it is proven with `sudo -n true` over that same account, key and
+address before the option is stored. The default account is a read-only one
+with no sudo at all, so without the probe the first evidence would be an
+apt run failing at the moment an operator believed a host was being patched.
 """
 
 from __future__ import annotations
@@ -29,6 +36,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 
 from .const import (
+    CONF_ALLOW_INSTALL,
     CONF_HOST,
     CONF_HOSTNAME,
     CONF_OFFLINE_EXPECTED,
@@ -39,6 +47,7 @@ from .const import (
     DEFAULT_SSH_USER,
     DOMAIN,
     SSH_FAST_TIMEOUT,
+    SUDO_PROBE_TIMEOUT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,15 +56,22 @@ _LOGGER = logging.getLogger(__name__)
 # the same reason: a truncated read must not read as a read that found nothing.
 _PROBE_CMD = 'echo "HOSTNAME=$(hostname)"\necho "__END__"\n'
 
+# What proves the SUDO half of the credential, run over the same account, key
+# and host the privileged blocks will use. It is deliberately `true` and not a
+# harmless-looking apt call: this must answer the permission question and
+# change nothing while doing so.
+_SUDO_PROBE_CMD = 'sudo -n true 2>/dev/null && echo "SUDO=1" || echo "SUDO=0"\necho "__END__"\n'
 
-async def _probe_hostname(
-    host: str, ssh_user: str, ssh_key: str
-) -> str | None:
-    """Ask the host its own name over the ssh credential this entry will use.
+
+async def _probe(
+    host: str, ssh_user: str, ssh_key: str, script: str, timeout: int
+) -> dict[str, str] | None:
+    """Run one KEY=value block over the ssh credential this entry will use.
 
     None on any failure -- unreachable, wrong key, no such account, refused
-    login -- which the caller surfaces as cannot_connect. Every one of those
-    is a reason not to create the entry.
+    login, or a reply with no end marker -- because a truncated read must not
+    read as a read that found nothing. Every one of those is a reason not to
+    store what the caller was about to store.
     """
     argv = [
         "ssh", "-i", ssh_key,
@@ -64,7 +80,7 @@ async def _probe_hostname(
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=8",
         f"{ssh_user}@{host}",
-        _PROBE_CMD,
+        script,
     ]
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -76,7 +92,7 @@ async def _probe_hostname(
         _LOGGER.debug("%s: probe ssh spawn failed: %s", host, err)
         return None
     try:
-        async with asyncio.timeout(SSH_FAST_TIMEOUT):
+        async with asyncio.timeout(timeout):
             stdout, stderr = await proc.communicate()
     except asyncio.TimeoutError:
         proc.kill()
@@ -92,12 +108,40 @@ async def _probe_hostname(
     out = stdout.decode(errors="replace")
     if "__END__" not in out:
         return None
+    parsed: dict[str, str] = {}
     for line in out.splitlines():
+        if line == "__END__":
+            break
         key, sep, val = line.partition("=")
-        if sep and key.strip() == "HOSTNAME":
-            name = val.strip()
-            return name or None
-    return None
+        if sep:
+            parsed[key.strip()] = val.strip()
+    return parsed
+
+
+async def _probe_hostname(host: str, ssh_user: str, ssh_key: str) -> str | None:
+    """The host's own name, or None on any failure the caller surfaces as
+    cannot_connect."""
+    parsed = await _probe(host, ssh_user, ssh_key, _PROBE_CMD, SSH_FAST_TIMEOUT)
+    if parsed is None:
+        return None
+    return (parsed.get("HOSTNAME") or "").strip() or None
+
+
+async def _probe_sudo(host: str, ssh_user: str, ssh_key: str) -> bool:
+    """Whether this entry's own SSH account has passwordless sudo.
+
+    FALSE ON EVERY FAILURE, including a transport failure. The question being
+    answered is "may this option be stored as True", and an unreadable host is
+    not a yes. Storing the grant on a host that could not be asked is exactly
+    the shape LAW 9 names: a green check taken on a channel other than the one
+    that will be used, which certifies nothing and certifies it green.
+    """
+    parsed = await _probe(
+        host, ssh_user, ssh_key, _SUDO_PROBE_CMD, SUDO_PROBE_TIMEOUT
+    )
+    if parsed is None:
+        return False
+    return parsed.get("SUDO") == "1"
 
 
 class LinuxMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -165,16 +209,58 @@ class LinuxMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class LinuxMonitorOptionsFlow(OptionsFlow):
+    """ONE STEP, carrying BOTH options.
+
+    Deliberately not split. async_create_entry(data=...) replaces
+    entry.options wholesale, so a second step returning only its own keys
+    would delete the first step's -- silently, with no edit to point at.
+    While there is one step there is nothing to merge; if a second is ever
+    added, both must merge over self.config_entry.options.
+    """
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        if user_input is not None:
-            return self.async_create_entry(data=user_input)
+        errors: dict[str, str] = {}
+        options = self.config_entry.options
+        data = self.config_entry.data
 
-        current = self.config_entry.options.get(CONF_OFFLINE_EXPECTED, False)
+        if user_input is not None:
+            wants_install = bool(user_input.get(CONF_ALLOW_INSTALL, False))
+            had_install = bool(options.get(CONF_ALLOW_INSTALL, False))
+
+            # PROBED ON THE TRANSITION TO TRUE, not on every save. Re-probing
+            # an already-granted entry would let one unreachable host revoke a
+            # grant that was proven when it mattered, turning a transient
+            # network fault into a silent loss of the control. Turning it OFF
+            # is never gated: withdrawing permission must always be possible,
+            # including from a host that cannot be reached to confirm it.
+            if wants_install and not had_install:
+                ok = await _probe_sudo(
+                    data[CONF_HOST],
+                    data.get(CONF_SSH_USER, DEFAULT_SSH_USER),
+                    data.get(CONF_SSH_KEY, DEFAULT_SSH_KEY),
+                )
+                if not ok:
+                    errors[CONF_ALLOW_INSTALL] = "no_sudo"
+
+            if not errors:
+                return self.async_create_entry(data=user_input)
+
+        suggested = user_input or options
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
-                {vol.Required(CONF_OFFLINE_EXPECTED, default=current): bool}
+                {
+                    vol.Required(
+                        CONF_OFFLINE_EXPECTED,
+                        default=suggested.get(CONF_OFFLINE_EXPECTED, False),
+                    ): bool,
+                    vol.Required(
+                        CONF_ALLOW_INSTALL,
+                        default=suggested.get(CONF_ALLOW_INSTALL, False),
+                    ): bool,
+                }
             ),
+            errors=errors,
         )
