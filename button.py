@@ -35,6 +35,17 @@ from .entity import LinuxMonitorEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+# Zero for the same reason as the read-only platforms: the entity is
+# coordinator-driven and implements no async_update.
+#
+# IT DOES NOT SERIALISE THIS PLATFORM'S ACTION AGAINST THE OTHER'S, and
+# nothing about this constant could. Home Assistant builds one semaphore per
+# (config entry, platform), so a limit here would never stand between a reboot
+# press and an apt install in flight -- they live in different platforms. That
+# guard is coordinator.install_in_progress, which button.py reads before it
+# will issue a reboot (#11).
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

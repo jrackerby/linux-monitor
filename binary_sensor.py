@@ -34,6 +34,12 @@ from . import LinuxMonitorConfigEntry
 from .const import CPU_PROBLEM_PCT, DISK_PROBLEM_PCT, TRANSPORT_FAIL_DWELL
 from .entity import LinuxMonitorEntity
 
+# Every entity in this integration is coordinator-driven: none implements
+# async_update, so there is no per-entity poll for this to throttle and 0 is
+# the correct declaration. Undeclared is not the same as zero -- it says
+# nothing, which is what jrackerby/linux-monitor#12 was about.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
