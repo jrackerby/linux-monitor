@@ -61,7 +61,12 @@ jobs:
         # was measured is a number nobody chose. Read it off a real run
         # first; the gate is a separate decision (#2's gap-list).
         run: |
+          # --maxfail=1 IS TEMPORARY AND IS FOR THE LOG, not for the gate.
+          # A collection fault in this layout produces one identical error per
+          # test -- 114 of them last run -- and the useful one is the FIRST,
+          # which a log tail cannot reach. Remove once this is green.
           python -m pytest \
+            --maxfail=1 \
             --junitxml=pytest-report.xml \
             --cov=custom_components.linux_monitor \
             --cov-report=term-missing:skip-covered
