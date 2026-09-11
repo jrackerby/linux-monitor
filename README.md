@@ -73,6 +73,33 @@ The integration lives at the repository **root**, not under
 `custom_components/`. `hacs.json` declares `content_in_root: true`, so HACS
 copies the root into `/config/custom_components/linux_monitor/`.
 
+## Removal
+
+*Settings → Devices & Services → Linux Monitor → the host's entry → ⋮ →
+**Delete***. That removes the entry, its device and all of its entities. To
+remove the integration itself afterwards, uninstall it in HACS and restart.
+
+**Deleting an entry destroys the only copy of that host's patch history.**
+This integration keeps, per host, the moment each pending security package was
+*first seen* and the moment a remote upgrade *last landed*, in its own store at
+`/config/.storage/linux_monitor_pending_<hostname>`. That store belongs to the
+config entry and goes with it.
+
+Neither figure is recoverable afterwards. The recorder keeps the *published*
+surface — what `security_age_days` read at each point — and not the rows behind
+it, so a history query reconstructs a summary of the old answer rather than the
+timestamps that produced it. Re-adding the host starts both clocks from zero,
+which makes every pending package look as though it arrived today: it
+under-reports patch age, the direction that hides the problem.
+
+So if those ages matter, **copy that file somewhere before deleting the
+entry**. Removing the subject is how you erase the subject.
+
+Two things deliberately survive a delete, because they are yours and not this
+integration's: the SSH key it was pointed at, and the `known_hosts` file. Note
+also that re-adding a host mints **new entity IDs** — Home Assistant never
+reclaims a released ID, so anything referring to the old ones needs updating.
+
 ## Development
 
 Issues and feature requests: **[jrackerby/linux-monitor/issues](https://github.com/jrackerby/linux-monitor/issues)**.

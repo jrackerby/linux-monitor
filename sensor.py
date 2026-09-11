@@ -28,6 +28,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
+# Every entity in this integration is coordinator-driven: none implements
+# async_update, so there is no per-entity poll for this to throttle and 0 is
+# the correct declaration. Undeclared is not the same as zero -- it says
+# nothing, which is what jrackerby/linux-monitor#12 was about.
+PARALLEL_UPDATES = 0
+
 from . import LinuxMonitorConfigEntry
 from .entity import LinuxMonitorEntity
 

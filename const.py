@@ -195,6 +195,18 @@ CPU_SAMPLE_SECS = 1
 # routine reboot or one transient ssh timeout.
 TRANSPORT_FAIL_DWELL = 3
 
+# CONSECUTIVE AUTH-CLASSIFIED FAILURES BEFORE A REAUTH FLOW IS STARTED. Lower
+# than TRANSPORT_FAIL_DWELL on purpose and for the opposite reason: that dwell
+# exists because an absent reading might be a flap that heals itself, and an
+# auth failure never does -- a key that is not in authorized_keys will not be
+# there next minute either. Two rather than one only so a single malformed
+# stderr cannot put a reauth card in front of the operator.
+#
+# It is deliberately SHORTER than the health dwell, so the card that names the
+# real cause appears BEFORE the sensor that would otherwise send the operator
+# to look at the network.
+SSH_AUTH_FAIL_DWELL = 2
+
 # Health ladder. CPU busy percent, never load.min1 (a multi-core host
 # saturates load well past 1.0 under normal use; see kiosk_pi/const.py for
 # the measured defect this avoids repeating).

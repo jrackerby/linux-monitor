@@ -69,6 +69,17 @@ from .entity import LinuxMonitorEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+# Zero for the same reason as the read-only platforms: the entity is
+# coordinator-driven and implements no async_update.
+#
+# IT DOES NOT SERIALISE THIS PLATFORM'S ACTION AGAINST THE OTHER'S, and
+# nothing about this constant could. Home Assistant builds one semaphore per
+# (config entry, platform), so a limit here would never stand between a reboot
+# press and an apt install in flight -- they live in different platforms. That
+# guard is coordinator.install_in_progress, which button.py reads before it
+# will issue a reboot (#11).
+PARALLEL_UPDATES = 0
+
 # Reported for BOTH versions when a host is flagged offline_expected, so the
 # pair is equal and the entity scores as nothing-pending.
 OFFLINE_VERSION = "offline_expected"
@@ -315,12 +326,24 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
             )
         if pending == 0 and not self._reboot_owed():
             raise HomeAssistantError(f"{host} has nothing pending.")
+        if self.coordinator.install_in_progress:
+            # _attr_in_progress greys the control in the UI; it does not stop
+            # a second service call arriving by another route. Two apt runs
+            # against one host is a dpkg lock fight at best.
+            raise HomeAssistantError(
+                f"{host} is already mid apt-get upgrade. Refusing to start a "
+                "second one."
+            )
 
         _LOGGER.warning(
             "%s: remote apt upgrade starting — %s package(s) pending",
             host, pending,
         )
         self._attr_in_progress = True
+        # On the COORDINATOR as well, because the entity that has to see it is
+        # in another platform: button.py refuses to reboot a host mid-upgrade,
+        # and PARALLEL_UPDATES cannot express that across platforms (#12).
+        self.coordinator.install_in_progress = True
         self.async_write_ha_state()
         # Cleared before the run, not after it. A tail left over from the
         # previous upgrade would otherwise be read as this one's -- and it
@@ -329,7 +352,7 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
         self.coordinator.last_install_tail = None
         self.coordinator.last_install_log = None
         try:
-            ok, out = await self.coordinator.async_exec(
+            ok, out, _kind = await self.coordinator.async_exec(
                 APT_UPGRADE_CMD, INSTALL_TIMEOUT
             )
             parsed = _parse_kv(out) if ok else None
@@ -391,6 +414,7 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
             await self.coordinator.async_exec(REBOOT_CMD, REBOOT_TIMEOUT)
         finally:
             self._attr_in_progress = False
+            self.coordinator.install_in_progress = False
             self.async_write_ha_state()
 
         await self.coordinator.async_request_refresh()

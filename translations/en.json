@@ -15,14 +15,28 @@
           "ssh_user": "A read-only account is enough for monitoring — every value collected on a schedule comes from a world-readable file or an unprivileged query. Passwordless sudo is needed only if you later turn on remote patching and reboot for this host, and that option probes for it before it will accept.",
           "offline_expected": "Set for a host that is deliberately powered down. It will be named and dispositioned rather than reported as a fault, and no polling is attempted."
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate {host}",
+        "description": "Home Assistant's SSH credential for {host} was refused by the host itself — not a network fault. The key may have been rotated, the entry removed from the account's authorized_keys, or the account deleted. Supply a working user and key below; they are tried against this host before anything is saved, and the host is asked its own name so a reassigned address cannot quietly repoint this entry at a different machine.",
+        "data": {
+          "ssh_user": "SSH user",
+          "ssh_key": "SSH private key path"
+        },
+        "data_description": {
+          "ssh_user": "The account on {host}. Read-only is enough unless remote patching is enabled for this host, which needs passwordless sudo.",
+          "ssh_key": "Path Home Assistant can read, with its public half in that account's authorized_keys on {host}."
+        }
       }
     },
     "error": {
       "cannot_connect": "Could not read the hostname over SSH. Check the address, that the account exists on that host, and that its public key is in the account's authorized_keys. If the host is deliberately powered down, tick 'Intentionally offline' and supply the hostname.",
-      "hostname_required_offline": "An intentionally-offline host cannot be probed for its name — enter it manually."
+      "hostname_required_offline": "An intentionally-offline host cannot be probed for its name — enter it manually.",
+      "wrong_host": "That credential works, but the machine it reached calls itself something else — so it is not this entry's host. Nothing was saved. Check the address, or add the host under its own name instead."
     },
     "abort": {
-      "already_configured": "That host is already configured."
+      "already_configured": "That host is already configured.",
+      "reauth_successful": "The new SSH credential was accepted by the host and saved."
     }
   },
   "options": {

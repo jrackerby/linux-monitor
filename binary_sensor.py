@@ -34,6 +34,12 @@ from . import LinuxMonitorConfigEntry
 from .const import CPU_PROBLEM_PCT, DISK_PROBLEM_PCT, TRANSPORT_FAIL_DWELL
 from .entity import LinuxMonitorEntity
 
+# Every entity in this integration is coordinator-driven: none implements
+# async_update, so there is no per-entity poll for this to throttle and 0 is
+# the correct declaration. Undeclared is not the same as zero -- it says
+# nothing, which is what jrackerby/linux-monitor#12 was about.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -65,6 +71,14 @@ class LinuxMonitorHealth(LinuxMonitorEntity, BinarySensorEntity):
         metrics = data.get("metrics") or {}
 
         if not data.get("online"):
+            # AN AUTH REFUSAL IS A KNOWN-BAD READING, NOT AN ABSENT ONE, so it
+            # belongs in the rung class that trips immediately: the host was
+            # reached and it refused this entry's credential. The dwell below
+            # exists because an absent reading might be a flap that heals
+            # itself -- a revoked key does not heal itself, and waiting the
+            # extra poll only delays the one message that names the cause.
+            if data.get("auth_failed"):
+                return [f"ssh_auth_failed:{s_fails}_polls"]
             # Below the dwell this is a flap, not a fault -- three minutes is
             # longer than a routine reboot or one transient ssh timeout.
             if s_fails >= TRANSPORT_FAIL_DWELL:
@@ -101,6 +115,11 @@ class LinuxMonitorHealth(LinuxMonitorEntity, BinarySensorEntity):
 
         if data.get("offline_expected"):
             disposition = "offline_expected"
+        elif data.get("auth_failed"):
+            # Named separately from "unreachable" on purpose: the two send an
+            # operator to different places, and reading one as the other is
+            # the whole defect #13 was filed for.
+            disposition = "auth_failed"
         elif reasons:
             disposition = "unreachable" if not data.get("online") else "problem"
         elif s_fails:
@@ -114,6 +133,10 @@ class LinuxMonitorHealth(LinuxMonitorEntity, BinarySensorEntity):
             "offline_expected": bool(data.get("offline_expected")),
             "ssh_ok": bool(data.get("ssh_ok")),
             "ssh_missed_polls": s_fails,
+            # True once ssh itself has said permission-denied on
+            # SSH_AUTH_FAIL_DWELL consecutive polls. A reauth card is in front
+            # of the operator by the time this is set.
+            "auth_failed": bool(data.get("auth_failed")),
             "transport_fail_dwell": TRANSPORT_FAIL_DWELL,
             "host": self.coordinator.host,
         }
