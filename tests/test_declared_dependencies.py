@@ -19,8 +19,20 @@ import sys
 
 import pytest
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-TESTS_DIR = REPO_ROOT / "tests"
+import custom_components.linux_monitor as _component
+
+# DERIVED FROM THE IMPORTED PACKAGE, not from this file's position. The suite
+# runs against a staged layout (tests/conftest.py says why), so the
+# integration is NOT this directory's sibling -- it is wherever
+# custom_components.linux_monitor was imported from. Walking up from __file__
+# found the workspace root and looked for a manifest.json that is one level
+# further down, which is how this check failed while the thing it checks was
+# fine.
+COMPONENT_DIR = pathlib.Path(_component.__file__).resolve().parent
+TESTS_DIR = pathlib.Path(__file__).resolve().parent
+# requirements_test.txt belongs to the WORKSPACE, beside the suite, not to the
+# integration -- the staging step moves it out of the package for that reason.
+WORKSPACE_ROOT = TESTS_DIR.parent
 
 # Ships INSIDE Home Assistant core, so manifest.json's requirements can stay
 # empty and still be truthful. Anything else the component imports has to be
@@ -62,9 +74,7 @@ def _third_party(names: set[str]) -> set[str]:
 
 
 def _component_files() -> list[pathlib.Path]:
-    return sorted(
-        p for p in REPO_ROOT.glob("*.py") if p.parent == REPO_ROOT
-    )
+    return sorted(COMPONENT_DIR.glob("*.py"))
 
 
 def _test_files() -> list[pathlib.Path]:
@@ -75,7 +85,7 @@ def test_the_component_imports_nothing_it_has_not_declared() -> None:
     """manifest.json's `requirements: []` is a claim. This is the check."""
     import json
 
-    manifest = json.loads((REPO_ROOT / "manifest.json").read_text())
+    manifest = json.loads((COMPONENT_DIR / "manifest.json").read_text())
     declared = {
         # "foo==1.2" / "foo>=1.2" / "foo" -> "foo"
         req.split("==")[0].split(">=")[0].split("[")[0].strip().replace("-", "_")
@@ -115,7 +125,7 @@ def test_the_suite_imports_nothing_requirements_test_does_not_install() -> None:
 def test_requirements_test_pins_the_harness_exactly() -> None:
     """An unpinned harness silently changes which Home Assistant the suite
     runs against, which is the one thing this file's pin is for."""
-    text = (REPO_ROOT / "requirements_test.txt").read_text()
+    text = (WORKSPACE_ROOT / "requirements_test.txt").read_text()
     lines = [
         line.strip() for line in text.splitlines()
         if line.strip() and not line.strip().startswith("#")
