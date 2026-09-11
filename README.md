@@ -53,6 +53,16 @@ save if it does not answer. An unreachable host is a refusal too: the question i
 whether the grant may be stored, and a host that could not be asked is not a yes.
 Turning the option back off is never gated.
 
+**Where the upgrade log goes.** `apt`'s output is written to
+`~/.cache/linux_monitor/apt-upgrade.log` for the entry's SSH account — or to
+`/var/tmp/linux_monitor-<uid>/apt-upgrade.log` if that account's home is not
+writable. Not `/tmp`: a successful install reboots the host, and on a host with
+`/tmp` on tmpfs that reboot erased the log of the only runs that reached it. You
+should not normally need to read it. The update entity carries `last_install_log`
+(the path the host actually chose) and `last_install_tail` (apt's closing lines)
+as attributes after a run in the current Home Assistant session; a failed install
+also puts the tail in the error it raises.
+
 ## Install
 
 **Via HACS.** HACS → ⋮ → *Custom repositories* → `https://github.com/jrackerby/linux-monitor`,
