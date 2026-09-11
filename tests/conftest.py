@@ -208,7 +208,44 @@ def ssh_answers(fast: str = FAST_OUT, slow: str = SLOW_OUT, rc: int = 0):
 
 
 @pytest.fixture
-def mounted(hass, entry_factory):
+def register_integration(hass):
+    """Put this integration into the loader's cache DIRECTLY, rather than
+    leaving Home Assistant to go and find it.
+
+    phcc's `enable_custom_integrations` works by popping the cache key so the
+    loader rescans, and that rescan runs `import custom_components` in an
+    EXECUTOR THREAD while pytest is importing modules on the main one. Under
+    that fixture the mounted tests failed with "Integration not found" -- but
+    not all of them, and not the same ones: one passed while both its
+    neighbours failed, which is the signature of a race rather than a missing
+    file. (Measured separately: `custom_components` resolves to a proper
+    namespace package with this integration inside it, so the scan had
+    everything it needed to succeed.)
+
+    resolve_from_root is the same classmethod that scan would have called, so
+    this seeds exactly what it would have produced and nothing else -- it
+    removes the timing, not a check. It is deliberately NOT autouse: it
+    depends on `hass`, and making every test build one to register something
+    it never loads would be slower for no reason.
+    """
+    import custom_components
+    from homeassistant import loader
+
+    from custom_components.linux_monitor.const import DOMAIN
+
+    integration = loader.Integration.resolve_from_root(
+        hass, custom_components, DOMAIN
+    )
+    assert integration is not None, (
+        "the integration could not be resolved out of the custom_components "
+        "namespace package -- the staged layout is wrong, not the test"
+    )
+    hass.data[loader.DATA_CUSTOM_COMPONENTS] = {DOMAIN: integration}
+    return integration
+
+
+@pytest.fixture
+def mounted(hass, entry_factory, register_integration):
     """An entry set up for real, through async_setup_entry, with all four
     platforms mounted and only the ssh subprocess replaced.
 

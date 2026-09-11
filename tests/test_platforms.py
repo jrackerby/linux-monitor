@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -24,8 +23,6 @@ from custom_components.linux_monitor.const import (
 from custom_components.linux_monitor.coordinator import LinuxMonitorCoordinator
 
 from .conftest import ssh_answers
-
-pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 
 async def test_every_platform_mounts_and_reads(hass, mounted) -> None:

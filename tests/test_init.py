@@ -11,7 +11,6 @@ confidently-wrong artefact that propagates.
 
 from __future__ import annotations
 
-import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.linux_monitor import async_migrate_entry
@@ -23,8 +22,6 @@ from custom_components.linux_monitor.const import (
     DOMAIN,
     LEGACY_CONF_GLANCES_PORT,
 )
-
-pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 V1_DATA = {
     CONF_HOST: "203.0.113.5",
