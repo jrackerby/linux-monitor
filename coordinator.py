@@ -283,6 +283,23 @@ REBOOT_CMD = "sudo -n /sbin/reboot"
 # of the host, and a message naming a file that is not there is worse than one
 # naming no file at all. TAIL carries apt's own last words back into the entity
 # so the ordinary case needs nothing read on the host.
+#
+# EACH LINE IS COLLAPSED TO WHAT A TERMINAL WOULD LEAVE SHOWING, which is
+# what an operator means by apt's last five lines. dpkg writes its progress
+# with carriage returns rather than newlines -- '(Reading database ...
+# 5%\r(Reading database ... 45%\r(Reading database ... 41234 files' is ONE
+# line that renders as its last fragment -- so `sed 's/.*\r//'` keeps the text
+# after the final \r on each line and drops the overwritten fragments. It runs
+# AFTER `tail -5`, so the window is five rendered lines; folding \r into \n
+# first would instead spend the whole window on progress percentages.
+#
+# Deleting the \r rather than cutting at them was the other candidate (#20).
+# It keeps every overwritten fragment mashed together -- '(Reading database
+# ... 5%(Reading database ... 45%' -- and the 400-char cut then lands inside
+# the noise. This reads.
+#
+# sed, not a shell loop: GNU sed is on every target (Debian, Raspberry Pi OS)
+# and FAST_CMD already depends on it. The `\r` escape is a GNU extension.
 APT_UPGRADE_CMD = r"""
 LOGDIR="${XDG_CACHE_HOME:-$HOME/.cache}/linux_monitor"
 mkdir -p "$LOGDIR" 2>/dev/null || LOGDIR="/var/tmp/linux_monitor-$(id -u)"
@@ -294,7 +311,7 @@ echo "LOG_PATH=$LOG"
 echo "REMOVED=$(grep -cE '^Remv ' "$LOG")"
 echo "KEPT_BACK=$(grep -c 'kept back' "$LOG")"
 echo "REMAINING=$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -c '^')"
-echo "TAIL=$(tail -5 "$LOG" | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
+echo "TAIL=$(tail -5 "$LOG" | sed 's/.*\r//' | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
 echo "__END__"
 """
 
@@ -387,13 +404,28 @@ def _classify_ssh(rc: int | None, stderr: str) -> str:
 
 
 def _parse_kv(text: str) -> dict[str, str] | None:
-    """None if the end marker is missing -- a truncated read must not read as
-    a read that found nothing."""
+    r"""None if the end marker is missing -- a truncated read must not read as
+    a read that found nothing.
+
+    SPLIT ON "\n" ALONE, NEVER str.splitlines(). The transport is a KEY=value
+    line protocol whose only record separator is the newline the shell block
+    echoes, but splitlines() also breaks on \r, \v, \f, \x1c-\x1e, \x85,
+    \u2028 and \u2029 -- so any value carrying one of those was cut there and
+    every fragment after it discarded as a line with no "=". Not theoretical:
+    dpkg writes its progress with carriage returns rather than newlines, and
+    TAIL came back from a real apt-get upgrade truncated to its first 21
+    characters (#20). A value is bytes the host measured, not text this parser
+    gets to re-line-break.
+
+    The marker is compared stripped for the same reason: a "__END__\r" is
+    still the end of the block, and under an exact compare the parser would
+    read straight past it.
+    """
     if "__END__" not in text:
         return None
     out: dict[str, str] = {}
-    for line in text.splitlines():
-        if line == "__END__":
+    for line in text.split("\n"):
+        if line.strip() == "__END__":
             break
         key, sep, val = line.partition("=")
         if sep:

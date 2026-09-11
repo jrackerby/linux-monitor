@@ -176,6 +176,41 @@ async def test_a_successful_run_records_the_log_path_and_tail_then_reboots(
     assert "libssl3" in attrs["last_install_tail"]
 
 
+async def test_a_tail_carrying_carriage_returns_reaches_the_attribute_whole(
+    hass, entity
+) -> None:
+    r"""#20, AT THE ENTITY. The pipeline collapses \r before the value is
+    echoed, so this shape should not arrive any more -- but every fixture in
+    this suite was hand-written with clean \n, which is precisely why the
+    truncation reached production unseen. A \r in a value is now the host's
+    data and survives to the attribute rather than cutting it at 21
+    characters.
+    """
+    e, c = entity()
+    raw = (
+        "APT_RC=0\n"
+        f"LOG_PATH={LOG_PATH}\n"
+        "REMOVED=0\n"
+        "KEPT_BACK=0\n"
+        "REMAINING=0\n"
+        "TAIL=(Reading database ...\r(Reading database ... 45%\r"
+        "Setting up libssl3:amd64 (3.5.2) ...\n"
+        "__END__\n"
+    )
+    with (
+        patch.object(c, "async_exec", AsyncMock(return_value=(True, raw, SSH_OK))),
+        patch.object(c, "_save", AsyncMock()),
+        patch.object(c, "async_request_refresh", AsyncMock()),
+    ):
+        await e.async_install(None, False)
+
+    assert c.last_install_tail == (
+        "(Reading database ...\r(Reading database ... 45%\r"
+        "Setting up libssl3:amd64 (3.5.2) ..."
+    )
+    assert c.last_install_log == LOG_PATH
+
+
 async def test_a_failed_apt_run_raises_does_not_reboot_and_keeps_its_words(
     hass, entity
 ) -> None:
