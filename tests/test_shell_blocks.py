@@ -29,7 +29,12 @@ DPKG_PROGRESS = (
     "(Reading database ... 5%\r(Reading database ... 45%\r"
     "(Reading database ... 41234 files and directories currently installed.)"
 )
-APT_PROGRESS = "Progress: [  0%]\rProgress: [ 20%]\rProgress: [100%]"
+# TRAILING \r, BECAUSE APT WRITES ONE. Every progress line ends with a carriage
+# return before its newline -- the terminal cursor is sent back to the start of
+# the line it is about to overwrite. A fixture without it is the omission that
+# let an empty attribute reach production: `sed 's/.*\r//'` alone cuts at THAT
+# carriage return and leaves nothing behind it.
+APT_PROGRESS = "Progress: [  0%]\rProgress: [ 20%]\rProgress: [100%]\r"
 DPKG_LOG = (
     "Reading package lists...\n"
     "Building dependency tree...\n"
@@ -40,6 +45,19 @@ DPKG_LOG = (
     f"{APT_PROGRESS}\n"
     "Setting up libssl3:amd64 (3.5.2) ...\n"
     "Processing triggers for libc-bin (2.41-12) ...\n"
+)
+# EVERY line a trailing \r, which is what a log written entirely through a
+# progress display looks like. Under the first fix this whole window rendered
+# empty.
+ALL_CR_LOG = "".join(
+    f"{line}\r\n"
+    for line in (
+        "Preparing to unpack .../libssl3_3.5.2_amd64.deb ...",
+        "Unpacking libssl3:amd64 (3.5.2) ...",
+        "Progress: [ 20%]\rProgress: [100%]",
+        "Setting up libssl3:amd64 (3.5.2) ...",
+        "Processing triggers for libc-bin (2.41-12) ...",
+    )
 )
 
 # The pipeline as it shipped before #20, kept as a CONTROL. Without it these
@@ -112,7 +130,7 @@ def test_the_pipeline_this_replaced_fails_on_the_same_fixture(tmp_path) -> None:
     tail = _tail_value(SHIPPED_BEFORE_20, DPKG_LOG, tmp_path)
 
     assert "\r" in tail
-    assert "Progress: [ 0%]\rProgress: [ 20%]\rProgress: [100%]" in tail
+    assert "Progress: [ 0%]\rProgress: [ 20%]\rProgress: [100%]\r" in tail
 
 
 def test_the_tail_pipeline_is_bounded_at_400_characters(tmp_path) -> None:
@@ -128,3 +146,51 @@ def test_the_tail_pipeline_is_empty_rather_than_noisy_on_an_empty_log(
     """An upgrade that wrote nothing reports nothing. `last_install_tail` is
     read with `or None`, so an empty string lands on None at the entity."""
     assert _tail_value(_tail_line(), "", tmp_path) == ""
+
+
+def test_a_log_whose_every_line_ends_in_a_carriage_return_still_reads(
+    tmp_path,
+) -> None:
+    """THE PRODUCTION REGRESSION OF THE FIRST FIX, AND THE REASON THE STRIP
+    RUNS FIRST.
+
+    `sed 's/.*\\r//'` cuts at the LAST carriage return on a line -- and apt
+    puts one at the END of every progress line, before the newline. Cutting
+    there leaves the line empty, so a window of five such lines rendered the
+    whole attribute blank: measured live on two real upgrades, with
+    `last_install_log` set and `last_install_tail` gone. Blank is worse than
+    the truncation #20 was filed about, because a missing attribute reads as a
+    run that produced no words at all.
+    """
+    tail = _tail_value(_tail_line(), ALL_CR_LOG, tmp_path)
+
+    assert tail == (
+        "Preparing to unpack .../libssl3_3.5.2_amd64.deb ... "
+        "Unpacking libssl3:amd64 (3.5.2) ... "
+        "Progress: [100%] "
+        "Setting up libssl3:amd64 (3.5.2) ... "
+        "Processing triggers for libc-bin (2.41-12) ..."
+    )
+
+
+def test_a_non_empty_log_never_renders_an_empty_tail(tmp_path) -> None:
+    """THE PROPERTY, NOT AN EXAMPLE. Whatever a host's apt writes, a log with
+    words in it must not come back as an attribute with none -- that is the
+    shape that cost a production deploy, and no single fixture would have
+    covered all of these.
+    """
+    line = _tail_line()
+    shapes = {
+        "trailing cr on every line": ALL_CR_LOG,
+        "crlf throughout": "a ...\r\nb ...\r\nc ...\r\n",
+        "one progress line only": "Progress: [  0%]\rProgress: [100%]\r\n",
+        "bare cr, no newline at all": "Setting up foo ...\rSetting up bar ...",
+        "no newline at the end": "Setting up foo ...\nSetting up bar ...",
+        "nothing but carriage returns": "\r\r\r\n",
+        "plain": DPKG_LOG,
+    }
+    for name, log in shapes.items():
+        tail = _tail_value(line, log, tmp_path)
+        if log.strip("\r\n"):
+            assert tail, f"{name}: a log with words in it rendered an empty tail"
+        assert "\r" not in tail, f"{name}: a control character reached the attribute"
