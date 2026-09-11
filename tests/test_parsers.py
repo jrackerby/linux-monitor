@@ -55,6 +55,48 @@ def test_parse_kv_ignores_a_line_with_no_separator() -> None:
     assert _parse_kv("noise\nA=1\n__END__\n") == {"A": "1"}
 
 
+def test_parse_kv_keeps_a_carriage_return_inside_a_value() -> None:
+    r"""THE #20 REGRESSION, IN THE SHAPE PRODUCTION ACTUALLY PRODUCED.
+
+    str.splitlines() breaks on \r as well as \n, so under the shipped parser
+    this value was cut at the first carriage return -- TAIL read '(Reading
+    database ...', 21 characters, and every fragment after it was dropped as a
+    line with no '='. The suite could not have caught it: every fixture in it
+    was written by hand with clean \n, which is what a KEY=value contract
+    looks like when a person writes one and not what dpkg emits.
+    """
+    raw = (
+        "APT_RC=0\n"
+        "TAIL=(Reading database ...\r(Reading database ... 45%\r"
+        "Setting up foo ...\n"
+        "__END__\n"
+    )
+    parsed = _parse_kv(raw)
+    assert parsed == {
+        "APT_RC": "0",
+        "TAIL": "(Reading database ...\r(Reading database ... 45%\rSetting up foo ...",
+    }
+
+
+def test_parse_kv_keeps_every_other_separator_splitlines_would_have_taken() -> None:
+    r"""\r is the one that bit, and it is not the only one splitlines() takes.
+
+    A form feed, a vertical tab and \x85 all end a line to splitlines() and
+    none of them ends a record here: the transport's only separator is the
+    newline the shell block echoes.
+    """
+    parsed = _parse_kv("CPU_MODEL=a\x0bb\x0cc\x85d e\n__END__\n")
+    assert parsed == {"CPU_MODEL": "a\x0bb\x0cc\x85d e"}
+
+
+def test_parse_kv_stops_at_a_marker_carrying_a_carriage_return() -> None:
+    """Splitting on \\n alone leaves a CRLF marker as '__END__\\r'. It is still
+    the end of the block, so the compare is made on the stripped line -- an
+    exact compare would read straight past it and parse the trailing noise
+    this marker exists to fence off."""
+    assert _parse_kv("A=1\r\n__END__\r\nB=2\r\n") == {"A": "1"}
+
+
 def test_parse_kv_keeps_an_empty_value_distinct_from_an_absent_key() -> None:
     """SECURITY_PKGS= means the host answered and had none; a missing key
     means nobody asked. security_pkgs() depends on telling them apart."""

@@ -140,11 +140,11 @@ jobs:
           # pytest already fails an EMPTY suite (exit 5). This catches the more
           # dangerous shape: a suite that still runs after quietly losing most
           # of itself to a bad conftest or a renamed directory.
-          # 200 against a suite that executes 227. Set from a measured run
+          # 210 against a suite that executes 235. Set from a measured run
           # rather than guessed, and raised with the suite: 90 was right when
-          # it ran 130.
-          if [ "$n" -lt 200 ]; then
-            echo "::error title=Suite floor::executed $n tests, expected at least 200"
+          # it ran 130, 200 when it ran 227.
+          if [ "$n" -lt 210 ]; then
+            echo "::error title=Suite floor::executed $n tests, expected at least 210"
             exit 1
           fi
 
