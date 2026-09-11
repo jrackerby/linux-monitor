@@ -9,8 +9,6 @@ entities LAW.md §11 contracts for stay available when their subject does not.
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -20,9 +18,7 @@ from custom_components.linux_monitor.const import (
     CONF_OFFLINE_EXPECTED,
     DOMAIN,
 )
-from custom_components.linux_monitor.coordinator import LinuxMonitorCoordinator
-
-from .conftest import ssh_answers
+from .conftest import patch_transport
 
 
 async def test_every_platform_mounts_and_reads(hass, mounted) -> None:
@@ -71,9 +67,12 @@ async def test_device_info_comes_off_the_ssh_read(hass, mounted) -> None:
     at config time. No configuration_url: it used to point at a Glances web UI
     that dies with the daemon this integration no longer needs, and a dead
     link on a device page is worse than none."""
-    await mounted()
-    device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, "testhost")}
+    entry = await mounted()
+    # async_get_device is deprecated in 2026.9 and RAISES rather than warning:
+    # identifiers are no longer unique across config entries, so the lookup is
+    # scoped to this entry's id.
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, "testhost"), entry.entry_id
     )
     assert device is not None
     assert device.name == "testhost"
@@ -150,7 +149,9 @@ async def test_unloading_removes_every_platform(hass, mounted) -> None:
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is entry.state.NOT_LOADED
-    assert hass.states.get("sensor.testhost_cpu") is None
+    # Home Assistant leaves a restored placeholder behind rather than dropping
+    # the state outright, so "gone" here is unavailable, not absent.
+    assert hass.states.get("sensor.testhost_cpu").state == STATE_UNAVAILABLE
 
 
 async def test_changing_an_option_reloads_the_entry(hass, mounted) -> None:
@@ -160,7 +161,7 @@ async def test_changing_an_option_reloads_the_entry(hass, mounted) -> None:
     entry = await mounted()
     assert hass.states.get("button.testhost_reboot_host") is None
 
-    with patch.object(LinuxMonitorCoordinator, "_ssh_raw", ssh_answers()):
+    with patch_transport():
         hass.config_entries.async_update_entry(
             entry, options={**entry.options, CONF_ALLOW_INSTALL: True}
         )

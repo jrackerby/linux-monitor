@@ -207,6 +207,26 @@ def ssh_answers(fast: str = FAST_OUT, slow: str = SLOW_OUT, rc: int = 0):
     return _raw
 
 
+def patch_transport(answer=None):
+    """Patch the ssh stand-in onto the COORDINATOR CLASS, adapting for `self`.
+
+    Exported rather than kept inside the mounted fixture because a test that
+    reloads an entry has to re-apply the patch itself, and writing the adapter
+    out a second time is how the two drift. Fakes stay two-argument here and
+    everywhere else.
+    """
+    from unittest.mock import patch
+
+    from custom_components.linux_monitor.coordinator import LinuxMonitorCoordinator
+
+    answer = answer or ssh_answers()
+
+    async def _as_method(_self, script, timeout):
+        return await answer(script, timeout)
+
+    return patch.object(LinuxMonitorCoordinator, "_ssh_raw", _as_method)
+
+
 @pytest.fixture
 def mounted(hass, entry_factory, enable_custom_integrations):  # noqa: ARG001
     """An entry set up for real, through async_setup_entry, with all four
@@ -222,27 +242,15 @@ def mounted(hass, entry_factory, enable_custom_integrations):  # noqa: ARG001
     with "Integration not found", and requiring every future module to
     remember a marker is how that comes back.
     """
-    from unittest.mock import patch
-
-    from custom_components.linux_monitor.coordinator import LinuxMonitorCoordinator
-
     async def _make(*, options=None, data=None, raw=None):
         entry = entry_factory(options=options, data=data)
         entry.add_to_hass(hass)
 
-        # The stand-in has to go on the CLASS -- the coordinator does not
-        # exist until async_setup_entry builds one -- and a plain function put
-        # there is called as a method, so `self` arrives as the first
-        # argument. Adapting it HERE, once, keeps every fake written against
-        # the same two-argument shape as the instance-level patches elsewhere;
-        # making each fake variadic instead would put the same trap in every
-        # test that writes one.
-        answer = raw or ssh_answers()
-
-        async def _as_method(_self, script, timeout):
-            return await answer(script, timeout)
-
-        with patch.object(LinuxMonitorCoordinator, "_ssh_raw", _as_method):
+        # The stand-in goes on the CLASS -- the coordinator does not exist
+        # until async_setup_entry builds one -- so it is called as a method
+        # and `self` arrives first. patch_transport adapts for that in one
+        # place; see there.
+        with patch_transport(raw):
             assert await hass.config_entries.async_setup(entry.entry_id)
             await hass.async_block_till_done()
         return entry
