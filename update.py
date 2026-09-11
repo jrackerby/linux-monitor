@@ -236,6 +236,8 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
                 "security_packages": None,
                 "pending_since": None,
                 "security_age_days": None,
+                "last_install_log": None,
+                "last_install_tail": None,
             }
         pending, security, newest = self._counts()
         slow = (self.coordinator.data or {}).get("slow") or {}
@@ -270,6 +272,12 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
             # and under-reports, which is the direction that hides it.
             "pending_since": since.isoformat() if since else None,
             "security_age_days": age,
+            # Where the last remote upgrade's log actually landed on the host,
+            # and its last lines. Reported rather than assumed -- the host
+            # chooses between ~/.cache and /var/tmp, and it is the host that
+            # says which (#8). Both None until this HA session has run one.
+            "last_install_log": self.coordinator.last_install_log,
+            "last_install_tail": self.coordinator.last_install_tail,
         }
 
     # --- install ------------------------------------------------------------
@@ -314,6 +322,12 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
         )
         self._attr_in_progress = True
         self.async_write_ha_state()
+        # Cleared before the run, not after it. A tail left over from the
+        # previous upgrade would otherwise be read as this one's -- and it
+        # would read as this one's most convincingly in exactly the case the
+        # attribute exists for, a run that returned nothing.
+        self.coordinator.last_install_tail = None
+        self.coordinator.last_install_log = None
         try:
             ok, out = await self.coordinator.async_exec(
                 APT_UPGRADE_CMD, INSTALL_TIMEOUT
@@ -325,10 +339,18 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
                 # part-configured, so say so rather than implying nothing ran.
                 raise HomeAssistantError(
                     f"{host}: apt upgrade did not return a complete result. The "
-                    "host may be part-configured — read "
-                    "/tmp/linux_monitor_apt_upgrade.log on the host before "
-                    "retrying."
+                    "host may be part-configured — read the upgrade log on the "
+                    "host before retrying: ~/.cache/linux_monitor/apt-upgrade.log "
+                    "for this entry's SSH account, or "
+                    "/var/tmp/linux_monitor-<uid>/apt-upgrade.log if its home "
+                    "was not writable. This is the one path that cannot name "
+                    "the file itself — LOG_PATH comes back with the end marker "
+                    "that was missing here."
                 )
+            # BEFORE the return-code check, so a FAILED upgrade records its
+            # tail too. That is the run an operator most needs the words from.
+            self.coordinator.last_install_log = parsed.get("LOG_PATH") or None
+            self.coordinator.last_install_tail = parsed.get("TAIL") or None
             rc = parsed.get("APT_RC")
             if rc != "0":
                 raise HomeAssistantError(

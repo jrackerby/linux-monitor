@@ -261,14 +261,39 @@ REBOOT_CMD = "sudo -n /sbin/reboot"
 # marker, so a truncated read is distinguishable from a clean one. APT_RC is
 # captured on the line IMMEDIATELY after the command -- anything between them
 # overwrites $?.
+# THE LOG DOES NOT GO IN /tmp, AND THAT IS THE POINT OF THE THREE LINES THAT
+# CHOOSE ITS DIRECTORY. On Raspberry Pi OS -- and on any host mounting /tmp on
+# tmpfs -- the reboot this call chains on exit 0 erases it, so the one artefact
+# an operator would read after a SUCCESSFUL run never survived the run, while a
+# FAILED run, which does not reboot, kept its log. That is exactly the wrong
+# way round: the run that succeeded and then took the host away is the harder
+# one to account for afterwards. Measured on a Raspberry Pi OS host running
+# this integration, 2026-09-10 -- the file was absent on return (#8).
+#
+# ~/.cache is per-user, persistent across a reboot, and needs no privilege.
+# /var/tmp is the fallback for an account whose home is unwritable, per-uid
+# because /var/tmp is sticky and world-writable: two accounts patching one host
+# must not land on one filename. There is deliberately no third fallback -- if
+# both are unwritable the redirect itself fails, apt never runs, and the block
+# either reports a non-zero APT_RC or dies before the end marker. Both refuse
+# the reboot, which is the correct end of that branch.
+#
+# LOG_PATH is REPORTED, never assumed: the fallback makes the path a property
+# of the host, and a message naming a file that is not there is worse than one
+# naming no file at all. TAIL carries apt's own last words back into the entity
+# so the ordinary case needs nothing read on the host.
 APT_UPGRADE_CMD = r"""
-LOG=/tmp/linux_monitor_apt_upgrade.log
+LOGDIR="${XDG_CACHE_HOME:-$HOME/.cache}/linux_monitor"
+mkdir -p "$LOGDIR" 2>/dev/null || LOGDIR="/var/tmp/linux_monitor-$(id -u)"
+mkdir -p "$LOGDIR" 2>/dev/null || true
+LOG="$LOGDIR/apt-upgrade.log"
 sudo -n sh -c 'DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef upgrade' > "$LOG" 2>&1
 echo "APT_RC=$?"
+echo "LOG_PATH=$LOG"
 echo "REMOVED=$(grep -cE '^Remv ' "$LOG")"
 echo "KEPT_BACK=$(grep -c 'kept back' "$LOG")"
 echo "REMAINING=$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -c '^')"
-echo "TAIL=$(tail -2 "$LOG" | tr '\n' ' ' | cut -c1-200)"
+echo "TAIL=$(tail -5 "$LOG" | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
 echo "__END__"
 """
 
@@ -465,6 +490,15 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # once. This counter is the persistent record; it only ever grows.
         self.reboot_count: int = 0
         self._last_uptime_secs: float | None = None
+
+        # The last remote upgrade's own last words, and where its log actually
+        # landed. IN MEMORY ONLY, on purpose: the store above carries a shape
+        # discriminator that would have to move to admit one more key, and
+        # losing the patch-age clock to that bump costs more than a tail that
+        # does not survive a Home Assistant restart. It does survive the thing
+        # it exists for -- the host's own reboot (#8).
+        self.last_install_tail: str | None = None
+        self.last_install_log: str | None = None
 
     def restore_reboot_count(self, count: int) -> None:
         """Called once by the reboot-count sensor's async_added_to_hass,
