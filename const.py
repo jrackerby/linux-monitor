@@ -11,10 +11,9 @@ kiosk-specific concepts: no Chromium, no display, no dashboard assignment
 and no kiosk.sh config-drift assertion. Remote patch and reboot ARE here as
 of 0.5.0, off by default and per entry -- see the reversal note below.
 
-0.4.0, GH-639: RENAMED FROM host_monitor TO linux_monitor (Joel, ruling).
-The name was the point: after the GH-467 split, kiosk_pi is kiosk-only and
-this component owns generic OS health for every Linux host, including hosts
-that are not kiosks. `host_monitor` described what it was.
+0.4.0: RENAMED FROM host_monitor TO linux_monitor. The name was the point:
+after generic OS health was split away from the kiosk integration, this
+component owns it for every Linux host, including hosts that are not kiosks. `host_monitor` described what it was.
 
 THE DOMAIN IS THE ONLY THING THAT MOVED, AND IT MOVED OUTSIDE THIS CODE.
 A config entry's domain is its dispatch key, so no in-component hook can
@@ -29,20 +28,19 @@ entities beside the originals as `_2` duplicates. Consumers name entity_ids,
 so nothing downstream was repointed: household_state's INTEGRITY axis keys on
 config-entry SHAPE and names no domain, and the dashboard fleet reads ids.
 
-0.3.0, GH-470: THE GLANCES DAEMON DEPENDENCY IS GONE, and with it the whole
+0.3.0: THE GLANCES DAEMON DEPENDENCY IS GONE, and with it the whole
 second transport. Every reading that used to come from a Glances REST daemon
 on :61208 now comes from /proc, /sys, findmnt, nproc and /etc/os-release over
 the SSH connection this integration already opened for the kernel readback —
 one transport, no agent, nothing to keep running on the host.
 
-WHY, measured 2026-09-01: prodhost01 read fully unavailable. Its Glances was
-running in XML-RPC mode bound to loopback, so the REST transport was dead —
+WHY, measured 2026-09-01: a monitored host read fully unavailable. Its Glances
+was running in XML-RPC mode bound to loopback, so the REST transport was dead —
 and the `monitor` account did not exist on that host at all, so the SSH
 transport had never worked either. The entry was Glances-only in practice
 from the day it was created and one daemon misconfiguration took the whole
 host dark. An agent that must be installed, configured and kept running is a
-failure mode; a file in /proc is not. kiosk_pi dropped Glances entirely in
-its 0.12.0 (GH-467) and this integration was its last consumer.
+failure mode; a file in /proc is not.
 
 ONE TRANSPORT, SAID OUT LOUD. There is no longer anything to combine, so the
 glances_fails counter, the min(glances_fails, ssh_fails) floor in the health
@@ -69,15 +67,14 @@ thing that changed: the maintainer asked for update monitoring and remote
 system updates here, and named kiosk_pi's implementation as the source to
 take them from. That is the specific argument, and it is the owner's.
 
-WHAT THE EARLIER POSITION WAS PROTECTING, AND HOW IT SURVIVES. devhost01 —
-this integration's first host — is a Claude Code working host, and a remote
-reboot/upgrade path into the machine driving the session using it is a
-footgun. Three things keep that closed rather than reopened:
+WHAT THE EARLIER POSITION WAS PROTECTING, AND HOW IT SURVIVES. A monitored
+host may be the very machine an operator is working on, and a remote
+reboot/upgrade path into it is a footgun. Three things keep that closed rather than reopened:
 
   1. The capability is OFF by default and opted in PER ENTRY
      (CONF_ALLOW_INSTALL). Held off, neither control exists at all.
   2. It needs passwordless sudo, which the monitor account does not have --
-     measured live on devhost01 2026-09-01, `sudo -n true` answered "a
+     measured live on the first host 2026-09-01, `sudo -n true` answered "a
      password is required". That measurement is now load-bearing rather than
      merely descriptive: it is why the option cannot be turned on there by
      accident.
@@ -137,9 +134,8 @@ CONF_OFFLINE_EXPECTED = "offline_expected"
 #
 # The default SSH account (DEFAULT_SSH_USER) is a read-only one with NO sudo,
 # which is why config_flow probes `sudo -n true` over the entry's own
-# credential before it will store this as True — LAW 9: a setup check that
-# exercises a different channel than the one that will be used certifies
-# nothing.
+# credential before it will store this as True. A setup check that exercises a
+# different channel than the one that will be used certifies nothing.
 CONF_ALLOW_INSTALL = "allow_install"
 
 # Entry-data key from VERSION 1, when a Glances REST daemon was a second
@@ -149,12 +145,11 @@ CONF_ALLOW_INSTALL = "allow_install"
 LEGACY_CONF_GLANCES_PORT = "glances_port"
 
 DEFAULT_SSH_USER = "monitor"
-# DELIBERATELY NOT RENAMED WITH THE DOMAIN (GH-639). This is a path to a
-# private key that exists on the HA host under this exact name, not a
-# reference to the old domain. Two live entries (devhost01, prodhost01) read
-# it; the four kiosk hosts use /config/.ssh/kiosk_key instead. Renaming the
-# string without moving the file breaks SSH auth for those two hosts, and
-# moving a credential to make a name tidy buys nothing. The filename is
+# DELIBERATELY NOT RENAMED WITH THE DOMAIN. This is a path to a
+# private key that exists on the Home Assistant host under this exact name,
+# not a reference to the old domain. Renaming the string without moving the
+# file breaks SSH auth for every entry already using it, and moving a
+# credential to make a name tidy buys nothing. The filename is
 # historical and stays that way.
 DEFAULT_SSH_KEY = "/config/.ssh/host_monitor_key"
 DEFAULT_KNOWN_HOSTS = "/config/.ssh/known_hosts"
@@ -214,8 +209,8 @@ CPU_PROBLEM_PCT = 90.0
 DISK_PROBLEM_PCT = 90.0
 
 # hwmon `name` values that are a CPU package/die temperature, worst-first by
-# preference. Measured 2026-09-01: coretemp on the amd64 hosts (hwmon2 on
-# devhost01, temp1_input labelled "Package id 0"), cpu_thermal on every Pi
+# preference. Measured 2026-09-01: coretemp on amd64 hosts (hwmon2, with
+# temp1_input labelled "Package id 0"), cpu_thermal on a Raspberry Pi
 # (hwmon0). NOT a guess — an Intel box also exposes pch_cannonlake, hp,
 # ucsi_source_psy_* and iwlwifi_1 as hwmon devices, and iwlwifi_1's
 # temp1_input answers ENODATA when the radio is idle, so "first hwmon with a

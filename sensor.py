@@ -5,8 +5,8 @@ already turned from KEY=value text into typed readings or None. Nothing here
 parses; a parse failure has already landed on None by the time it arrives.
 
 KEYS ARE FROZEN. `key` feeds entity.py's unique_id (<hostname>_<key>) and
-through it every entity_id in the registry, so the GH-470 transport swap
-changed where each value comes FROM and not one of the names below.
+through it every entity_id in the registry, so the transport swap changed
+where each value comes FROM and not one of the names below.
 """
 
 from __future__ import annotations
@@ -214,7 +214,7 @@ class LinuxMonitorSensor(LinuxMonitorEntity, SensorEntity):
 
 class LinuxMonitorRebootCount(LinuxMonitorEntity, RestoreEntity, SensorEntity):
     """Counts uptime resets, not polls -- see coordinator._async_update_data
-    for why the health binary_sensor's dwell/streak misses these (GH-402).
+    for why the health binary_sensor's dwell/streak misses these.
     Restored across an HA restart of its own so a crash-loop mid-diagnosis
     does not read as resolved just because HA bounced too."""
 

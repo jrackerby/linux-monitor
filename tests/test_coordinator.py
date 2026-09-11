@@ -32,7 +32,7 @@ def _raw(rc, out="", err=""):
 
 
 async def test_a_dead_transport_never_raises(hass, coordinator_factory) -> None:
-    """LAW.md §11's contract. Raising takes every entity unavailable and an
+    """The never-raise contract. Raising takes every entity unavailable and an
     unavailable entity's attributes vanish -- which is how a broken collector
     reads green."""
     c = coordinator_factory()

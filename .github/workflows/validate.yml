@@ -1,8 +1,8 @@
 name: validate
 
-# Every one of these repos shipped with no CI at all (GH-483): a change landed,
-# jrackerby/HA bumped the submodule pointer, and nothing between the edit and
-# the live estate ever validated the manifest.
+# This repository shipped without CI: a change landed and nothing between the
+# edit and a running Home Assistant ever validated the manifest. These jobs are
+# that missing gate.
 
 on:
   push:
@@ -104,7 +104,7 @@ jobs:
           python -m pip install --upgrade pip
           # Never a package list in this workflow: a second copy goes stale on
           # the next import added, and its failure then reads as a broken test
-          # rather than as a missing declaration (LAW.md §15).
+          # rather than as a missing declaration.
           pip install -r requirements_test.txt
 
       - name: pytest
@@ -154,10 +154,10 @@ jobs:
       # WHY THIS STAGING STEP EXISTS. home-assistant/actions/hassfest takes no
       # path input -- it runs the hassfest image against ${{ github.workspace }}
       # and scans custom_components/*. This repo keeps its integration at the
-      # ROOT (hacs.json content_in_root: true) because jrackerby/HA submodules
-      # it AS custom_components/${{ env.DOMAIN }}. Handed the repo as-is,
-      # hassfest finds zero integrations. So build the HA layout here rather
-      # than restructure the repo and break the submodule path.
+      # ROOT (hacs.json content_in_root: true), which is the layout HACS
+      # installs from. Handed the repo as-is, hassfest finds zero integrations.
+      # So build the HA layout here rather than restructure the repo and break
+      # the way HACS installs it.
       - name: stage the custom_components layout hassfest scans
         run: |
           mkdir -p "custom_components/$DOMAIN"
@@ -198,7 +198,6 @@ jobs:
       # Reporting it as VOID rather than green keeps the distinction that
       # matters -- the check did not run, so nothing was proven either way. It
       # starts running by itself the moment the repository is made public.
-      # jrackerby/HA#483 carries that decision.
       - name: VOID -- HACS validation cannot run against a private repository
         if: ${{ github.event.repository.private }}
         run: |
@@ -206,7 +205,7 @@ jobs:
           echo "HACS reads hacs.json and manifest.json from raw.githubusercontent.com with NO"
           echo "Authorization header, in CI and in a live install alike, so a private repository"
           echo "404s. This step is a VOID, not a pass: nothing about HACS compatibility was"
-          echo "verified here. See jrackerby/HA#483."
+          echo "verified here."
 
       - uses: hacs/action@main
         if: ${{ !github.event.repository.private }}

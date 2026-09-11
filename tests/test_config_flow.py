@@ -1,4 +1,4 @@
-"""The config flow -- the rule this repo is the estate's worked example of.
+"""The config flow -- and the rule this repo is the worked example of.
 
 `test-before-configure` is not an abstraction here. An earlier version of this
 integration probed a Glances daemon for a hostname while polling over ssh, so

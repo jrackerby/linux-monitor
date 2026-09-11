@@ -1,11 +1,11 @@
 """Every third-party import must be declared somewhere that CI installs from.
 
-LAW.md §15: extracting a component exposes its suite's undeclared
-dependencies, and the first run on a clean runner is when it learns this. A
-suite that has only ever run inside one venv imports whatever that venv
-happened to carry for other reasons, and nothing says so while the code stays
-put. tempest_wx is the estate's worked example -- `import yaml`, green for
-months, red at collection on its own repo's first run.
+Extracting a component exposes its suite's undeclared dependencies, and the
+first run on a clean runner is when it learns this. A suite that has only ever
+run inside one venv imports whatever that venv happened to carry for other
+reasons, and nothing says so while the code stays put. The worked example: an
+`import yaml`, green for months, red at collection on its own repo's first
+run.
 
 The check is cheap and static, which is the point: it runs in milliseconds on
 every commit rather than waiting for an extraction that may be years away.
