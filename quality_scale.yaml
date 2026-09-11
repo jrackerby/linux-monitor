@@ -11,9 +11,15 @@
 # `if not integration.core: return`, so a custom component's quality_scale.yaml
 # is never read -- while manifest.json's schema still ACCEPTS a quality_scale
 # key. A tier declared there would be a self-claim with no gate behind it, and
-# this repo does not declare one: `config-flow-test-coverage` is todo, so
-# Bronze is not met and saying otherwise in the manifest would be the exact
-# confidently-wrong artefact that propagates.
+# this repo still does not declare one.
+#
+# BRONZE IS NOW MET by this file's own reckoning -- every Bronze rule below is
+# done or exempt -- and the manifest key stays absent anyway, because the
+# reason for leaving it out was never that Bronze was unmet. It is that the
+# key asserts a tier nothing checks. The evidence is this file and the run it
+# cites; a word in the manifest would add a claim without adding a check.
+#
+# SILVER IS NOT MET: `test-coverage` is todo at a measured 70%.
 #
 # SCOPE: BRONZE AND SILVER ONLY, deliberately. hassfest's SCHEMA requires an
 # entry for every rule in ALL_RULES, Gold and Platinum included, so this file
@@ -62,17 +68,18 @@ rules:
   # two fields whose consequences are not obvious from the label (ssh_user,
   # offline_expected) and for both options fields.
 
-  config-flow-test-coverage:
-    status: todo
-    comment: >
-      THERE IS NO TEST SUITE IN THIS REPO AT ALL -- no tests/, no pytest
-      configuration, and CI runs hassfest and hacs/action only. This is the
-      Bronze blocker: every other Bronze rule here is done or exempt. The flow
-      that most needs covering is the one this repo is the estate's worked
-      example of -- _probe_hostname and _probe_sudo returning None on every
-      failure mode (unreachable, wrong key, no such account, missing end
-      marker) and the options flow refusing to store allow_install on any of
-      them.
+  config-flow-test-coverage: done
+  # 99% of config_flow.py, measured -- one uncovered line. tests/
+  # test_config_flow.py covers the user step (probe reaches the host, an
+  # unreachable host is a refusal, an offline host must be named by hand, a
+  # duplicate aborts), both reauth outcomes, and the options flow's sudo gate
+  # on the transition to true, on withdrawal, and on an entry that already had
+  # it. test_probe.py covers the machinery underneath: _probe asserted on its
+  # ARGV rather than its answer -- the key, the account, the address,
+  # BatchMode -- because a probe that reaches the right host by the wrong
+  # channel certifies nothing, which is the whole of this repo's worked
+  # example. Plus every failure landing on None, and _probe_sudo answering
+  # False on a host that could not be asked.
 
   dependency-transparency: done
   # requirements is [] -- there is no PyPI dependency to be transparent about.
@@ -98,16 +105,16 @@ rules:
   # why the integration lives at the repository root (hacs.json
   # content_in_root).
 
-  docs-removal-instructions:
-    status: todo
-    comment: >
-      README has no removal section. It needs one, and it needs to say what
-      removal destroys rather than just how to do it: deleting the config
-      entry drops this integration's .storage ledger with it, and that ledger
-      is the ONLY record of when each pending security package was first seen
-      and when a remote upgrade last landed. Neither is reconstructible from
-      recorder history, which preserves the published surface and not the rows
-      behind it (LAW.md §5). Removing the entry IS that delete.
+  docs-removal-instructions: done
+  # README ## Removal, added in #14. It says how, and then says what removal
+  # DESTROYS: the entry takes this integration's .storage ledger with it, and
+  # that ledger is the only record of each pending security package's
+  # first-seen and of the last applied upgrade. Neither is reconstructible
+  # from recorder history, which keeps the published surface and not the rows
+  # behind it (LAW.md §5), so re-adding the host restarts both clocks at zero
+  # and under-reports patch age. Names the file, says to copy it first, and
+  # says what deliberately survives -- the SSH key and known_hosts are the
+  # operator's, not this integration's.
 
   docs-triggers:
     status: exempt
@@ -169,18 +176,17 @@ rules:
 
   # --- SILVER ---------------------------------------------------------------
 
-  action-exceptions:
-    status: todo
-    comment: >
-      HALF DONE, AND THE DONE HALF IS THE LOUD ONE. update.async_install
-      raises HomeAssistantError on every refusal -- offline_expected, no
-      opt-in, no reported state, nothing pending, a truncated read, a non-zero
-      apt exit -- deliberately, because a patch control that declines silently
-      leaves the operator believing the host was patched. The reboot BUTTON
-      does not: async_press logs at INFO when async_exec comes back not-ok and
-      raises nothing, so a press against an unreachable host, or one refused
-      for offline_expected, looks identical in the UI to one that worked. The
-      button needs the same treatment as install.
+  action-exceptions: done
+  # Both actions raise on every refusal they can know about, and on every
+  # failure that proves the command never ran. update.async_install always
+  # did; the reboot button gained it in #11, where it had been logging at INFO
+  # so a press against an unreachable host looked exactly like one that
+  # worked.
+  #
+  # The button lets EXACTLY ONE failure class through: SSH_TRANSPORT_LOST,
+  # because that is what a successful reboot looks like from this end -- it
+  # tore down the session carrying its own result. A class rather than "any
+  # error", so a refused sudo or a dead host cannot hide inside it.
 
   config-entry-unloading: done
   # async_unload_entry forwards to async_unload_platforms; the update listener
@@ -223,41 +229,62 @@ rules:
   # is the same threshold the health binary_sensor reports on, so the log and
   # the entity cannot disagree about when a host went down.
 
-  parallel-updates:
-    status: todo
-    comment: >
-      No platform module defines PARALLEL_UPDATES. Every platform here is
-      coordinator-driven and none of them polls independently, so the correct
-      declaration is PARALLEL_UPDATES = 0 on binary_sensor, sensor and update;
-      button and update also carry ACTIONS (press, install) that reach the
-      host over ssh, so the value there is a statement about how many of those
-      may run at once and wants deciding rather than copying. Undeclared is
-      not the same as zero, and leaving it undeclared says nothing.
+  parallel-updates: done
+  # 0 on all four platforms: every entity is coordinator-driven and none
+  # implements async_update, so there is no per-entity poll to throttle.
+  #
+  # The two ACTION platforms record what the constant cannot do for them, so
+  # the next reader does not mistake the 0 for a considered safety property
+  # that is missing. Home Assistant builds one semaphore per (config entry,
+  # platform), so no value here could ever stand between an install and a
+  # reboot press -- they live in different platforms. That guard is
+  # coordinator.install_in_progress, which button.py reads (#11).
 
   reauthentication-flow:
-    status: todo
+    status: done
     comment: >
-      There is no reauth step, and nothing raises ConfigEntryAuthFailed. A
-      rotated ssh key, a revoked authorized_keys entry or a deleted account
-      presents exactly like an unreachable host: _ssh_raw returns None, the
-      streak counter climbs, and the health sensor reports a problem. That is
-      not wrong -- it IS a fault -- but it sends the operator to look at the
-      network for something only a credential change fixes, and there is no
-      path to supply a new key short of deleting and recreating the entry,
-      which drops the .storage ledger (see docs-removal-instructions). ssh's
-      own exit codes and stderr distinguish "permission denied" from "no route
-      to host"; the failure path currently discards that distinction.
+      Added in #13, and it declines the rule's own instrument, which is a
+      DEVIATION and is recorded here rather than left to be re-derived.
+
+      ConfigEntryAuthFailed is not raised. Raising from the polling path
+      leaves coordinator.data at the previous poll while last_update_success
+      goes false, and the two entities that override `available` to stay up
+      would then go on publishing the last good reading -- so a host whose key
+      was revoked would read HEALTHY on the one surface built to say
+      otherwise. That is precisely what LAW.md §11's never-raise contract
+      exists to refuse. coordinator._check_auth calls
+      entry.async_start_reauth directly and the poll still returns a truthful
+      dict, so the operator gets the card AND the sensor stays honest.
+
+      What triggers it is ssh's own permission-denied on SSH_AUTH_FAIL_DWELL
+      consecutive polls, never a timeout: _classify_ssh separates auth from
+      unreachable, host-key and transport-lost, and an unrecognised 255 lands
+      on unreachable because a reauth card nobody can satisfy is worse than
+      the reverse. The form re-probes over the account, key and address the
+      entry will poll with, and asks the host its own name -- a credential
+      that works but answers to a different hostname is not this entry's
+      host.
 
   test-coverage:
     status: todo
     comment: >
-      No test suite -- see config-flow-test-coverage. Beyond the config flow,
-      the things that most need covering are the ones whose defects are silent
-      by construction: _parse_kv returning None on a missing end marker rather
-      than an empty dict, the typed readers landing on None rather than a
-      plausible value, security_pkgs distinguishing "nobody asked" from "the
-      host answered and had none", and update.py's _reboot_owed refusing to
-      assume a reboot it cannot prove. LAW.md §15 also requires that the
-      suite's third-party imports be declared BESIDE it rather than in the
-      workflow, so a clean runner fails as a missing declaration rather than
-      as a broken test.
+      THE LAST SILVER GAP, and the number is measured rather than estimated:
+      130 tests, 70% overall, on homeassistant 2026.9.1 -- the version the
+      estate runs.
+
+      Where it is thin is specific. sensor.py and binary_sensor.py are at 0%:
+      nothing yet mounts a platform, so every entity's reading, availability
+      override and attribute block is unexercised, and the health sensor's
+      rung logic in particular is real branching that deserves tests.
+      entity.py is 68% (DeviceInfo and the availability override),
+      __init__.py 50% (setup, unload and the v1->v2 migration),
+      coordinator.py 85% and update.py 80%.
+
+      Not gated in CI yet, deliberately: a --cov-fail-under invented before
+      anything was measured is a number nobody chose. The figure above is the
+      one to ratchet from.
+
+      Already satisfied: LAW.md §15's requirement that the suite's
+      third-party imports be declared BESIDE it rather than in the workflow.
+      requirements_test.txt does that, and tests/test_declared_dependencies.py
+      checks it statically by AST on every commit.
