@@ -77,6 +77,39 @@ ENTRY_DATA = {
 
 
 @pytest.fixture
+def creds() -> dict[str, str]:
+    """The credential an entry is built with.
+
+    A FIXTURE RATHER THAN AN IMPORTABLE CONSTANT, and that is not style. With
+    `from .conftest import HOST` in a test module, Python has to resolve
+    `tests` as a package -- which makes pytest walk up looking for the package
+    root, find the __init__.py that IS this integration (content_in_root), and
+    try to import it as a top-level module. Measured: 114 collection errors,
+    every one of them "attempted relative import with no known parent
+    package", pointing at the repo's own __init__.py. tests/ carries no
+    __init__.py for the same reason.
+    """
+    return {
+        "host": HOST,
+        "hostname": HOSTNAME,
+        "ssh_user": SSH_USER,
+        "ssh_key": SSH_KEY,
+    }
+
+
+@pytest.fixture
+def user_input(creds) -> dict:
+    """What the user step is handed, in the shape its schema declares."""
+    return {
+        CONF_HOST: creds["host"],
+        CONF_HOSTNAME: "",
+        CONF_SSH_USER: creds["ssh_user"],
+        CONF_SSH_KEY: creds["ssh_key"],
+        CONF_OFFLINE_EXPECTED: False,
+    }
+
+
+@pytest.fixture
 def entry_factory():
     """A config entry in this integration's CURRENT shape (version 2)."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry

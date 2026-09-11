@@ -26,20 +26,10 @@ from custom_components.linux_monitor.const import (
     DOMAIN,
 )
 
-from .conftest import HOST, HOSTNAME, SSH_KEY, SSH_USER
 
 PROBE = "custom_components.linux_monitor.config_flow._probe_hostname"
 SUDO_PROBE = "custom_components.linux_monitor.config_flow._probe_sudo"
 SETUP = "custom_components.linux_monitor.async_setup_entry"
-
-USER_INPUT = {
-    CONF_HOST: HOST,
-    CONF_HOSTNAME: "",
-    CONF_SSH_USER: SSH_USER,
-    CONF_SSH_KEY: SSH_KEY,
-    CONF_OFFLINE_EXPECTED: False,
-}
-
 
 async def _start(hass):
     return await hass.config_entries.flow.async_init(
@@ -51,7 +41,7 @@ async def _start(hass):
 
 
 async def test_user_flow_asks_the_host_its_own_name(
-    hass, enable_custom_integrations
+    hass, enable_custom_integrations, user_input, creds
 ) -> None:
     """The hostname is READ FROM THE HOST over the credential being stored,
     not taken on trust from whatever was typed in the address box."""
@@ -60,44 +50,44 @@ async def test_user_flow_asks_the_host_its_own_name(
     assert result["step_id"] == "user"
 
     with (
-        patch(PROBE, return_value=HOSTNAME) as probe,
+        patch(PROBE, return_value=creds["hostname"]) as probe,
         patch(SETUP, return_value=True),
     ):
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], USER_INPUT
+            result["flow_id"], user_input
         )
         await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == HOSTNAME
+    assert result["title"] == creds["hostname"]
     assert result["data"] == {
-        CONF_HOST: HOST,
-        CONF_HOSTNAME: HOSTNAME,
-        CONF_SSH_USER: SSH_USER,
-        CONF_SSH_KEY: SSH_KEY,
+        CONF_HOST: creds["host"],
+        CONF_HOSTNAME: creds["hostname"],
+        CONF_SSH_USER: creds["ssh_user"],
+        CONF_SSH_KEY: creds["ssh_key"],
     }
     # offline_expected is an OPTION, never entry data -- it is changeable
     # without recreating the entry.
     assert result["options"] == {CONF_OFFLINE_EXPECTED: False}
     # Probed over the account, key and address the entry will poll with.
-    probe.assert_called_once_with(HOST, SSH_USER, SSH_KEY)
+    probe.assert_called_once_with(creds["host"], creds["ssh_user"], creds["ssh_key"])
 
 
 async def test_user_flow_refuses_when_the_probe_cannot_reach_the_host(
-    hass, enable_custom_integrations
+    hass, enable_custom_integrations, user_input, creds
 ) -> None:
     """An unreachable host is a refusal, not a pass with a blank name."""
     result = await _start(hass)
     with patch(PROBE, return_value=None):
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], USER_INPUT
+            result["flow_id"], user_input
         )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
 
 
 async def test_an_offline_host_must_be_named_by_hand(
-    hass, enable_custom_integrations
+    hass, enable_custom_integrations, user_input, creds
 ) -> None:
     """A host that is deliberately powered down cannot be asked its name, so
     the flow says so rather than inventing one."""
@@ -105,7 +95,7 @@ async def test_an_offline_host_must_be_named_by_hand(
     with patch(PROBE, return_value=None) as probe:
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {**USER_INPUT, CONF_OFFLINE_EXPECTED: True, CONF_HOSTNAME: ""},
+            {**user_input, CONF_OFFLINE_EXPECTED: True, CONF_HOSTNAME: ""},
         )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {CONF_HOSTNAME: "hostname_required_offline"}
@@ -113,7 +103,7 @@ async def test_an_offline_host_must_be_named_by_hand(
 
 
 async def test_an_offline_host_with_a_typed_name_is_accepted_without_probing(
-    hass, enable_custom_integrations
+    hass, enable_custom_integrations, user_input, creds
 ) -> None:
     result = await _start(hass)
     with (
@@ -122,7 +112,7 @@ async def test_an_offline_host_with_a_typed_name_is_accepted_without_probing(
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {**USER_INPUT, CONF_OFFLINE_EXPECTED: True, CONF_HOSTNAME: "darkhost"},
+            {**user_input, CONF_OFFLINE_EXPECTED: True, CONF_HOSTNAME: "darkhost"},
         )
         await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -132,15 +122,15 @@ async def test_an_offline_host_with_a_typed_name_is_accepted_without_probing(
 
 
 async def test_the_same_host_cannot_be_added_twice(
-    hass, enable_custom_integrations, entry_factory
+    hass, enable_custom_integrations, entry_factory, user_input, creds
 ) -> None:
     """Keyed on the host's OWN name, so one machine added under two addresses
     is still one entry."""
     entry_factory().add_to_hass(hass)
     result = await _start(hass)
-    with patch(PROBE, return_value=HOSTNAME):
+    with patch(PROBE, return_value=creds["hostname"]):
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], USER_INPUT
+            result["flow_id"], user_input
         )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
@@ -150,7 +140,7 @@ async def test_the_same_host_cannot_be_added_twice(
 
 
 async def test_reauth_stores_a_new_key_once_the_host_accepts_it(
-    hass, enable_custom_integrations, entry_factory
+    hass, enable_custom_integrations, entry_factory, creds
 ) -> None:
     entry = entry_factory()
     entry.add_to_hass(hass)
@@ -160,7 +150,7 @@ async def test_reauth_stores_a_new_key_once_the_host_accepts_it(
     assert result["step_id"] == "reauth_confirm"
 
     with (
-        patch(PROBE, return_value=HOSTNAME) as probe,
+        patch(PROBE, return_value=creds["hostname"]) as probe,
         patch(SETUP, return_value=True),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -174,13 +164,13 @@ async def test_reauth_stores_a_new_key_once_the_host_accepts_it(
     assert entry.data[CONF_SSH_USER] == "monitor2"
     assert entry.data[CONF_SSH_KEY] == "/config/.ssh/new_key"
     # Unchanged -- reauth replaces the credential, never the subject.
-    assert entry.data[CONF_HOST] == HOST
-    assert entry.data[CONF_HOSTNAME] == HOSTNAME
-    probe.assert_called_once_with(HOST, "monitor2", "/config/.ssh/new_key")
+    assert entry.data[CONF_HOST] == creds["host"]
+    assert entry.data[CONF_HOSTNAME] == creds["hostname"]
+    probe.assert_called_once_with(creds["host"], "monitor2", "/config/.ssh/new_key")
 
 
 async def test_reauth_refuses_a_credential_the_host_will_not_take(
-    hass, enable_custom_integrations, entry_factory
+    hass, enable_custom_integrations, entry_factory, creds
 ) -> None:
     """Storing it unprobed would leave the operator sure they had fixed it."""
     entry = entry_factory()
@@ -189,15 +179,15 @@ async def test_reauth_refuses_a_credential_the_host_will_not_take(
     with patch(PROBE, return_value=None):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_SSH_USER: SSH_USER, CONF_SSH_KEY: "/config/.ssh/still_wrong"},
+            {CONF_SSH_USER: creds["ssh_user"], CONF_SSH_KEY: "/config/.ssh/still_wrong"},
         )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
-    assert entry.data[CONF_SSH_KEY] == SSH_KEY, "nothing may be stored on a refusal"
+    assert entry.data[CONF_SSH_KEY] == creds["ssh_key"], "nothing may be stored on a refusal"
 
 
 async def test_reauth_refuses_a_credential_that_reaches_a_different_machine(
-    hass, enable_custom_integrations, entry_factory
+    hass, enable_custom_integrations, entry_factory, creds
 ) -> None:
     """THE ADDRESS WAS REASSIGNED, or the key went on the wrong box. Storing
     it would leave this entry quietly monitoring something else under the old
@@ -208,25 +198,25 @@ async def test_reauth_refuses_a_credential_that_reaches_a_different_machine(
     with patch(PROBE, return_value="someone-elses-host"):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_SSH_USER: SSH_USER, CONF_SSH_KEY: "/config/.ssh/new_key"},
+            {CONF_SSH_USER: creds["ssh_user"], CONF_SSH_KEY: "/config/.ssh/new_key"},
         )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "wrong_host"}
-    assert entry.data[CONF_SSH_KEY] == SSH_KEY
+    assert entry.data[CONF_SSH_KEY] == creds["ssh_key"]
 
 
 async def test_reauth_accepts_a_hostname_differing_only_in_case(
-    hass, enable_custom_integrations, entry_factory
+    hass, enable_custom_integrations, entry_factory, creds
 ) -> None:
     """Hostnames are case-insensitive; refusing on case alone would reject a
     working credential and leave the operator with no way back in."""
     entry = entry_factory()
     entry.add_to_hass(hass)
     result = await entry.start_reauth_flow(hass)
-    with patch(PROBE, return_value=HOSTNAME.upper()), patch(SETUP, return_value=True):
+    with patch(PROBE, return_value=creds["hostname"].upper()), patch(SETUP, return_value=True):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_SSH_USER: SSH_USER, CONF_SSH_KEY: "/config/.ssh/new_key"},
+            {CONF_SSH_USER: creds["ssh_user"], CONF_SSH_KEY: "/config/.ssh/new_key"},
         )
         await hass.async_block_till_done()
     assert result["type"] is FlowResultType.ABORT
@@ -237,7 +227,7 @@ async def test_reauth_accepts_a_hostname_differing_only_in_case(
 
 
 async def test_the_sudo_grant_is_probed_before_it_is_stored(
-    hass, enable_custom_integrations, entry_factory
+    hass, enable_custom_integrations, entry_factory, creds
 ) -> None:
     entry = entry_factory()
     entry.add_to_hass(hass)
@@ -255,12 +245,12 @@ async def test_the_sudo_grant_is_probed_before_it_is_stored(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_ALLOW_INSTALL] is True
-    probe.assert_called_once_with(HOST, SSH_USER, SSH_KEY)
+    probe.assert_called_once_with(creds["host"], creds["ssh_user"], creds["ssh_key"])
 
 
 @pytest.mark.parametrize("probe_answer", [False])
 async def test_a_host_that_cannot_be_asked_is_not_a_yes(
-    hass, enable_custom_integrations, entry_factory, probe_answer
+    hass, enable_custom_integrations, entry_factory, probe_answer, creds
 ) -> None:
     """_probe_sudo returns False on a transport failure too. The question is
     whether the grant may be STORED, and an unreachable host is not a yes."""
@@ -278,7 +268,7 @@ async def test_a_host_that_cannot_be_asked_is_not_a_yes(
 
 
 async def test_withdrawing_the_grant_is_never_gated(
-    hass, enable_custom_integrations, entry_factory
+    hass, enable_custom_integrations, entry_factory, creds
 ) -> None:
     """Turning it OFF must work from a host that cannot be reached to confirm
     it -- otherwise one network fault locks permission ON."""
@@ -297,7 +287,7 @@ async def test_withdrawing_the_grant_is_never_gated(
 
 
 async def test_an_already_granted_entry_is_not_reprobed(
-    hass, enable_custom_integrations, entry_factory
+    hass, enable_custom_integrations, entry_factory, creds
 ) -> None:
     """Re-probing would let one transient network fault revoke a grant that
     was proven when it mattered."""
