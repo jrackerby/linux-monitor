@@ -326,12 +326,24 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
             )
         if pending == 0 and not self._reboot_owed():
             raise HomeAssistantError(f"{host} has nothing pending.")
+        if self.coordinator.install_in_progress:
+            # _attr_in_progress greys the control in the UI; it does not stop
+            # a second service call arriving by another route. Two apt runs
+            # against one host is a dpkg lock fight at best.
+            raise HomeAssistantError(
+                f"{host} is already mid apt-get upgrade. Refusing to start a "
+                "second one."
+            )
 
         _LOGGER.warning(
             "%s: remote apt upgrade starting — %s package(s) pending",
             host, pending,
         )
         self._attr_in_progress = True
+        # On the COORDINATOR as well, because the entity that has to see it is
+        # in another platform: button.py refuses to reboot a host mid-upgrade,
+        # and PARALLEL_UPDATES cannot express that across platforms (#12).
+        self.coordinator.install_in_progress = True
         self.async_write_ha_state()
         # Cleared before the run, not after it. A tail left over from the
         # previous upgrade would otherwise be read as this one's -- and it
@@ -402,6 +414,7 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
             await self.coordinator.async_exec(REBOOT_CMD, REBOOT_TIMEOUT)
         finally:
             self._attr_in_progress = False
+            self.coordinator.install_in_progress = False
             self.async_write_ha_state()
 
         await self.coordinator.async_request_refresh()
