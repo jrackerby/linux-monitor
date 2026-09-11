@@ -55,27 +55,28 @@ jobs:
           # rather than as a missing declaration (LAW.md §15).
           pip install -r requirements_test.txt
 
+      - name: pytest
+        run: python -m pytest --junitxml=pytest-report.xml
+
       - name: a gate that ran nothing is not a pass
         run: |
           set -euo pipefail
-          # pytest exits 5 on "no tests collected", so an EMPTY suite already
-          # fails. This catches the more dangerous shape: a suite that still
-          # collects, but has quietly lost most of itself to a bad conftest,
-          # a renamed directory or a collection error in one module.
-          out="$(python -m pytest --collect-only -q 2>&1 | tail -5)"
-          echo "$out"
-          # ANCHORED AT THE START OF THE LINE. An unanchored .* is greedy
-          # and swallows every digit but the last, so "60 tests collected"
-          # parses as 6^H0 -- measured: it read 60 as 0 and 39 as 9.
-          n="$(printf '%s' "$out" | sed -n 's/^\([0-9][0-9]*\) tests\{0,1\} collected.*/\1/p' | tail -1)"
-          if [ -z "${n:-}" ] || [ "$n" -lt 40 ]; then
-            echo "::error title=Suite floor::collected ${n:-0} tests, expected at least 40"
+          # COUNTED OUT OF THE JUNIT REPORT, NEVER PARSED OUT OF PYTEST'S
+          # PROSE. The first version of this step read the "N tests collected"
+          # summary line; pytest 9 does not print one under `-q
+          # --collect-only` -- it prints a per-file count list instead -- so a
+          # 63-test run reported 0 and failed the build. The XML is a stable
+          # contract and this counts tests that actually RAN, which is a
+          # stronger floor than counting the ones that were collected.
+          n=$(python -c "import xml.etree.ElementTree as ET; print(sum(1 for _ in ET.parse('pytest-report.xml').getroot().iter('testcase')))")
+          echo "executed $n tests"
+          # pytest already fails an EMPTY suite (exit 5). This catches the more
+          # dangerous shape: a suite that still runs after quietly losing most
+          # of itself to a bad conftest or a renamed directory.
+          if [ "$n" -lt 40 ]; then
+            echo "::error title=Suite floor::executed $n tests, expected at least 40"
             exit 1
           fi
-          echo "collected $n tests"
-
-      - name: pytest
-        run: python -m pytest
 
   hassfest:
     runs-on: ubuntu-latest

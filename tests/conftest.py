@@ -47,3 +47,71 @@ sys.path.insert(0, str(_staging))
 def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
     """The staging tree is a symlink and a directory; remove the directory."""
     shutil.rmtree(_staging, ignore_errors=True)
+
+
+# --- shared fixtures --------------------------------------------------------
+
+import pytest  # noqa: E402
+
+from custom_components.linux_monitor.const import (  # noqa: E402
+    CONF_ALLOW_INSTALL,
+    CONF_HOST,
+    CONF_HOSTNAME,
+    CONF_OFFLINE_EXPECTED,
+    CONF_SSH_KEY,
+    CONF_SSH_USER,
+)
+from custom_components.linux_monitor.const import DOMAIN as LM_DOMAIN  # noqa: E402
+
+HOST = "203.0.113.5"
+HOSTNAME = "testhost"
+SSH_USER = "monitor"
+SSH_KEY = "/config/.ssh/test_key"
+
+ENTRY_DATA = {
+    CONF_HOST: HOST,
+    CONF_HOSTNAME: HOSTNAME,
+    CONF_SSH_USER: SSH_USER,
+    CONF_SSH_KEY: SSH_KEY,
+}
+
+
+@pytest.fixture
+def entry_factory():
+    """A config entry in this integration's CURRENT shape (version 2)."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    def _make(*, options=None, data=None, **kwargs):
+        return MockConfigEntry(
+            domain=LM_DOMAIN,
+            title=HOSTNAME,
+            unique_id=HOSTNAME.lower(),
+            version=2,
+            data={**ENTRY_DATA, **(data or {})},
+            options={
+                CONF_OFFLINE_EXPECTED: False,
+                CONF_ALLOW_INSTALL: False,
+                **(options or {}),
+            },
+            **kwargs,
+        )
+
+    return _make
+
+
+@pytest.fixture
+def coordinator_factory(hass, entry_factory):
+    """A REAL coordinator, with only the ssh subprocess replaced.
+
+    Built directly rather than through async_setup_entry: everything under
+    test here is the coordinator's own logic, and a full entry setup would
+    drag in four platforms and an entity registry to prove nothing extra.
+    """
+    from custom_components.linux_monitor.coordinator import LinuxMonitorCoordinator
+
+    def _make(*, options=None, data=None):
+        entry = entry_factory(options=options, data=data)
+        entry.add_to_hass(hass)
+        return LinuxMonitorCoordinator(hass, entry)
+
+    return _make

@@ -545,9 +545,21 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(
             hass, _LOGGER,
+            # PASSED EXPLICITLY, not left to the ContextVar. Without it
+            # DataUpdateCoordinator falls back to config_entries.current_entry,
+            # which is only set while Home Assistant is inside async_setup_entry
+            # -- so self.config_entry lands on None anywhere else, including in
+            # a test that builds a coordinator directly (#10). Core's own
+            # helper calls the fallback a thing integrations "should" not rely
+            # on; it declines to enforce it for custom ones, which is not a
+            # reason to keep relying on it.
+            config_entry=entry,
             name=f"linux_monitor:{entry.data[CONF_HOSTNAME]}",
             update_interval=UPDATE_INTERVAL,
         )
+        # Same object as self.config_entry above. Kept because every reader in
+        # this package already says self.entry, and renaming them all to prove
+        # a point is a bigger diff than the one being reviewed.
         self.entry = entry
         self.host: str = entry.data[CONF_HOST]
         self.hostname: str = entry.data[CONF_HOSTNAME]
