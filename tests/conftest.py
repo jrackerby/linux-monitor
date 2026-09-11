@@ -1,59 +1,53 @@
-"""Make an integration that lives at the REPOSITORY ROOT importable as
-`custom_components.linux_monitor`, which is the only name Home Assistant will
-ever look for it under.
+"""Fixtures, and the one assertion that makes a confusing layout fail loudly.
 
-WHY THIS IS NEEDED AT ALL. hacs.json declares `content_in_root: true`: the
-integration's modules sit at the top level of this repo rather than under
-`custom_components/<domain>/`, because that is the layout HACS copies into
-place. Every other repo's test suite gets this for free from its own directory
-structure.
+THIS REPOSITORY CANNOT BE TESTED IN PLACE, and that is a property of the
+layout rather than a shortcoming of the suite. hacs.json declares
+`content_in_root`, so this integration's package __init__.py sits at the
+REPOSITORY ROOT -- which means the root is a Python package, and pytest turns
+every directory holding an __init__.py into a Package collector whose setup()
+imports that __init__.py (`_pytest/python.py`, pytest_collect_directory and
+Package.setup). Collected from the repo root, pytest therefore imports this
+integration's own __init__.py as a top-level module with no parent, and its
+`from .const import ...` raises ImportError before a single test body runs.
 
-WHY IT IS A sys.path ENTRY AND NOT A CONFIG DIRECTORY. Home Assistant does not
-discover custom integrations by reading its config directory -- loader.py's
-_get_custom_components does `import custom_components` and then walks that
-package's __path__. So the requirement is an importable `custom_components`
-package on sys.path with this integration inside it, and pointing the test
-config directory anywhere would not have helped. Measured against
-homeassistant 2026.9.1's own loader.py rather than assumed.
+Measured rather than reasoned about: a tripwire in the root __init__.py fires
+at "ERROR at setup of test_trivial" from a bare clone, and does not fire from
+the staged layout. It is invisible under `--collect-only`, because setup()
+never runs there -- which is exactly how a first CI run reported 63 tests
+collected and then failed the moment the suite actually ran.
 
-The staging directory is built OUTSIDE the repository, on purpose: a
-`custom_components/` created inside it would contain a symlink back to its own
-parent, and anything walking the tree would recurse for ever.
-
-This runs at import time rather than in a fixture because collection imports
-the test modules -- and therefore the integration -- before any fixture runs.
+So the suite runs against a STAGED layout -- the integration copied to
+custom_components/<domain>/ under a workspace root that is not itself a
+package -- which is also the layout every Home Assistant tool expects and the
+one the hassfest job in this repo's workflow already builds for the same
+reason. The `tests` job in .github/workflows/validate.yml is the definition.
 """
 
 from __future__ import annotations
 
-import pathlib
-import shutil
-import sys
-import tempfile
+import pytest
 
-DOMAIN = "linux_monitor"
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-
-_staging = pathlib.Path(tempfile.mkdtemp(prefix="linux_monitor_tests_"))
-_package_root = _staging / "custom_components"
-# No __init__.py: `custom_components` is a namespace package in a real Home
-# Assistant config directory too, and adding one here would be a difference
-# between the test layout and the shipped one.
-_package_root.mkdir()
-(_package_root / DOMAIN).symlink_to(REPO_ROOT, target_is_directory=True)
-sys.path.insert(0, str(_staging))
-
-
-def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
-    """The staging tree is a symlink and a directory; remove the directory."""
-    shutil.rmtree(_staging, ignore_errors=True)
-
+try:
+    import custom_components.linux_monitor  # noqa: F401
+except ModuleNotFoundError as err:  # pragma: no cover - a layout fault
+    # DISCRIMINATE, do not assume. A missing dependency raises through here
+    # too, and reporting "your layout is wrong" over an absent homeassistant
+    # would send the next person to fix the one thing that is not broken.
+    # ModuleNotFoundError.name says which module was actually missing.
+    if (err.name or "").split(".")[0] != "custom_components":
+        raise
+    raise RuntimeError(
+        "custom_components.linux_monitor is not importable, so this suite is "
+        "being run against the repository root rather than the staged layout. "
+        "Running pytest from a bare clone of this repo does not work and "
+        "cannot be made to -- see this module's docstring. Build the layout "
+        "the `tests` job in .github/workflows/validate.yml builds, and run "
+        "pytest from there."
+    ) from err
 
 # --- shared fixtures --------------------------------------------------------
 
-import pytest  # noqa: E402
-
-from custom_components.linux_monitor.const import (  # noqa: E402
+from custom_components.linux_monitor.const import (
     CONF_ALLOW_INSTALL,
     CONF_HOST,
     CONF_HOSTNAME,
@@ -61,7 +55,7 @@ from custom_components.linux_monitor.const import (  # noqa: E402
     CONF_SSH_KEY,
     CONF_SSH_USER,
 )
-from custom_components.linux_monitor.const import DOMAIN as LM_DOMAIN  # noqa: E402
+from custom_components.linux_monitor.const import DOMAIN as LM_DOMAIN
 
 HOST = "203.0.113.5"
 HOSTNAME = "testhost"

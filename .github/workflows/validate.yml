@@ -34,7 +34,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      # Into a subdirectory ON PURPOSE, exactly as the hassfest job below does
+      # and for a closely related reason: the layout has to be built at the
+      # workspace ROOT, and it cannot be if the repo is already checked out
+      # there.
       - uses: actions/checkout@v4
+        with:
+          path: src
 
       # PINNED BY THE HARNESS, NOT CHOSEN HERE.
       # requirements_test.txt pins pytest-homeassistant-custom-component,
@@ -44,6 +50,52 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
+
+      # WHY THIS STAGING STEP EXISTS, AND IT IS NOT THE SAME REASON AS
+      # HASSFEST'S. hacs.json declares content_in_root, so this integration's
+      # package __init__.py sits at the repository root -- which makes the
+      # ROOT a Python package. pytest turns every directory holding an
+      # __init__.py into a Package collector whose setup() imports that
+      # __init__.py, so run from a bare checkout it imports this integration's
+      # own __init__.py as a top-level module with no parent and every test
+      # errors with "attempted relative import with no known parent package"
+      # before a single test body runs.
+      #
+      # It is INVISIBLE to --collect-only, because setup() does not run there.
+      # That is how the first run of this job reported 63 tests collected and
+      # then failed the moment the suite actually ran.
+      #
+      # Staging the integration under custom_components/<domain>/ leaves a
+      # workspace root that is not a package, which is also the layout every
+      # Home Assistant tool expects.
+      - name: stage the layout Home Assistant and pytest both expect
+        run: |
+          set -euo pipefail
+          mkdir -p "custom_components/$DOMAIN"
+          # cp/rm rather than rsync, same reasoning as the hassfest job: rsync
+          # is on today's ubuntu-latest but is not part of any image
+          # guarantee, and a staging step that dies on a missing tool is a
+          # gate that silently stops running.
+          cp -a src/. "custom_components/$DOMAIN/"
+          rm -rf "custom_components/$DOMAIN/.git" \
+                 "custom_components/$DOMAIN/.github" \
+                 "custom_components/$DOMAIN/tests"
+          # The suite and its configuration belong to the WORKSPACE, not to
+          # the integration -- leaving them inside would put pytest.ini beside
+          # a package again.
+          mv "custom_components/$DOMAIN/pytest.ini" .
+          mv "custom_components/$DOMAIN/requirements_test.txt" .
+          cp -a src/tests tests
+
+          # A GATE THAT COULD NOT RUN IS NOT A PASS. Assert every property the
+          # step exists to produce, by hand, before anything depends on it.
+          test -f "custom_components/$DOMAIN/manifest.json" \
+            || { echo "::error::staging produced no manifest.json"; exit 1; }
+          test -f tests/conftest.py \
+            || { echo "::error::staging produced no tests"; exit 1; }
+          test ! -e __init__.py \
+            || { echo "::error::the workspace root is a package -- pytest will import it"; exit 1; }
+          echo "staged $(find "custom_components/$DOMAIN" -type f | wc -l) files"
 
       - name: install test dependencies FROM THE FILE BESIDE THE SUITE
         run: |
@@ -61,12 +113,7 @@ jobs:
         # was measured is a number nobody chose. Read it off a real run
         # first; the gate is a separate decision (#2's gap-list).
         run: |
-          # --maxfail=1 IS TEMPORARY AND IS FOR THE LOG, not for the gate.
-          # A collection fault in this layout produces one identical error per
-          # test -- 114 of them last run -- and the useful one is the FIRST,
-          # which a log tail cannot reach. Remove once this is green.
           python -m pytest \
-            --maxfail=1 \
             --junitxml=pytest-report.xml \
             --cov=custom_components.linux_monitor \
             --cov-report=term-missing:skip-covered
