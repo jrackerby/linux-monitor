@@ -208,50 +208,19 @@ def ssh_answers(fast: str = FAST_OUT, slow: str = SLOW_OUT, rc: int = 0):
 
 
 @pytest.fixture
-def register_integration(hass):
-    """Put this integration into the loader's cache DIRECTLY, rather than
-    leaving Home Assistant to go and find it.
-
-    phcc's `enable_custom_integrations` works by popping the cache key so the
-    loader rescans, and that rescan runs `import custom_components` in an
-    EXECUTOR THREAD while pytest is importing modules on the main one. Under
-    that fixture the mounted tests failed with "Integration not found" -- but
-    not all of them, and not the same ones: one passed while both its
-    neighbours failed, which is the signature of a race rather than a missing
-    file. (Measured separately: `custom_components` resolves to a proper
-    namespace package with this integration inside it, so the scan had
-    everything it needed to succeed.)
-
-    resolve_from_root is the same classmethod that scan would have called, so
-    this seeds exactly what it would have produced and nothing else -- it
-    removes the timing, not a check. It is deliberately NOT autouse: it
-    depends on `hass`, and making every test build one to register something
-    it never loads would be slower for no reason.
-    """
-    import custom_components
-    from homeassistant import loader
-
-    from custom_components.linux_monitor.const import DOMAIN
-
-    integration = loader.Integration.resolve_from_root(
-        hass, custom_components, DOMAIN
-    )
-    assert integration is not None, (
-        "the integration could not be resolved out of the custom_components "
-        "namespace package -- the staged layout is wrong, not the test"
-    )
-    hass.data[loader.DATA_CUSTOM_COMPONENTS] = {DOMAIN: integration}
-    return integration
-
-
-@pytest.fixture
-def mounted(hass, entry_factory, register_integration):
+def mounted(hass, entry_factory, enable_custom_integrations):  # noqa: ARG001
     """An entry set up for real, through async_setup_entry, with all four
     platforms mounted and only the ssh subprocess replaced.
 
     This is the only fixture that exercises the wiring rather than a class in
     isolation: the platform forwards, the entity registry, DeviceInfo, and the
     availability overrides LAW.md §11 contracts for.
+
+    enable_custom_integrations is a DEPENDENCY rather than a mark on each
+    module that mounts something. phcc's version drops the loader's cache so
+    Home Assistant goes and finds this integration; without it setup fails
+    with "Integration not found", and requiring every future module to
+    remember a marker is how that comes back.
     """
     from unittest.mock import patch
 
@@ -260,9 +229,20 @@ def mounted(hass, entry_factory, register_integration):
     async def _make(*, options=None, data=None, raw=None):
         entry = entry_factory(options=options, data=data)
         entry.add_to_hass(hass)
-        with patch.object(
-            LinuxMonitorCoordinator, "_ssh_raw", raw or ssh_answers()
-        ):
+
+        # The stand-in has to go on the CLASS -- the coordinator does not
+        # exist until async_setup_entry builds one -- and a plain function put
+        # there is called as a method, so `self` arrives as the first
+        # argument. Adapting it HERE, once, keeps every fake written against
+        # the same two-argument shape as the instance-level patches elsewhere;
+        # making each fake variadic instead would put the same trap in every
+        # test that writes one.
+        answer = raw or ssh_answers()
+
+        async def _as_method(_self, script, timeout):
+            return await answer(script, timeout)
+
+        with patch.object(LinuxMonitorCoordinator, "_ssh_raw", _as_method):
             assert await hass.config_entries.async_setup(entry.entry_id)
             await hass.async_block_till_done()
         return entry
