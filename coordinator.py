@@ -298,6 +298,16 @@ REBOOT_CMD = "sudo -n /sbin/reboot"
 # ... 5%(Reading database ... 45%' -- and the 400-char cut then lands inside
 # the noise. This reads.
 #
+# THE TRAILING \r IS STRIPPED FIRST, AND THAT HALF IS NOT OPTIONAL. apt ends
+# its progress lines with a carriage return before the newline, so `s/.*\r//`
+# alone cuts at THAT one and leaves the line empty -- with five such lines in
+# the window the whole attribute comes back blank. Measured on production, on
+# two real upgrades, within minutes of the first version of this pipeline
+# going live: `last_install_log` set and `last_install_tail` gone entirely,
+# which is worse than the truncation it replaced. `s/\r*$//` runs first, so
+# only the carriage returns INSIDE a line -- the ones that really did overwrite
+# something -- decide where the text starts.
+#
 # sed, not a shell loop: GNU sed is on every target (Debian, Raspberry Pi OS)
 # and FAST_CMD already depends on it. The `\r` escape is a GNU extension.
 APT_UPGRADE_CMD = r"""
@@ -311,7 +321,7 @@ echo "LOG_PATH=$LOG"
 echo "REMOVED=$(grep -cE '^Remv ' "$LOG")"
 echo "KEPT_BACK=$(grep -c 'kept back' "$LOG")"
 echo "REMAINING=$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -c '^')"
-echo "TAIL=$(tail -5 "$LOG" | sed 's/.*\r//' | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
+echo "TAIL=$(tail -5 "$LOG" | sed 's/\r*$//; s/.*\r//' | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
 echo "__END__"
 """
 
