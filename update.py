@@ -340,7 +340,7 @@ class LinuxMonitorUpdate(LinuxMonitorEntity, UpdateEntity):
         self.coordinator.last_install_tail = None
         self.coordinator.last_install_log = None
         try:
-            ok, out = await self.coordinator.async_exec(
+            ok, out, _kind = await self.coordinator.async_exec(
                 APT_UPGRADE_CMD, INSTALL_TIMEOUT
             )
             parsed = _parse_kv(out) if ok else None

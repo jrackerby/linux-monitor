@@ -70,7 +70,9 @@ class LinuxMonitorRebootButton(LinuxMonitorEntity, ButtonEntity):
         host = self.coordinator.hostname
         _LOGGER.warning("%s: remote reboot requested", host)
         # async_exec already refuses on an offline_expected entry and logs why.
-        ok, _out = await self.coordinator.async_exec(REBOOT_CMD, REBOOT_TIMEOUT)
+        ok, _out, _kind = await self.coordinator.async_exec(
+            REBOOT_CMD, REBOOT_TIMEOUT
+        )
         _LOGGER.info(
             "%s: reboot command issued (ssh ok=%s). A non-zero exit here is "
             "not evidence of failure — the reboot drops the transport. Watch "

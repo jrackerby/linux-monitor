@@ -39,6 +39,7 @@ from .const import (
     PENDING_STORE_VERSION,
     SLOW_INTERVAL,
     SLOW_RETRY_INTERVAL,
+    SSH_AUTH_FAIL_DWELL,
     SSH_FAST_TIMEOUT,
     SSH_SLOW_TIMEOUT,
     STORE_SHAPE,
@@ -298,6 +299,93 @@ echo "__END__"
 """
 
 
+# --- ssh failure classification ---------------------------------------------
+#
+# WHY THIS EXISTS. Until #13 every failure of the transport presented
+# identically: _ssh_raw returned None, the streak climbed, the health sensor
+# reported a problem. A rotated key, a revoked authorized_keys entry and a
+# deleted account are all FAULTS, so that was never wrong -- but it sent the
+# operator to look at the network for something only a credential change
+# fixes, and the integration had no way to ask for a new one.
+#
+# ssh itself keeps the distinction and throws it away at the exit code: 255 is
+# "ssh failed" for permission denied, connection refused, no route to host and
+# a connection dropped by the far end alike. The discriminator is stderr, so
+# that is what gets read -- CASE-INSENSITIVELY and by substring, because the
+# wording varies by OpenSSH version and this must not become a parser.
+#
+# ANY OTHER NON-ZERO CODE IS THE REMOTE COMMAND'S OWN, not ssh's: the login
+# worked and the thing that ran exited non-zero. That is REMOTE, never AUTH,
+# or a failing script would be read as a credential problem and would put a
+# reauth card in front of the operator for something no key can fix.
+SSH_OK = "ok"
+SSH_AUTH = "auth"
+SSH_UNREACHABLE = "unreachable"
+SSH_HOST_KEY = "host_key"
+SSH_TRANSPORT_LOST = "transport_lost"
+SSH_REMOTE = "remote"
+
+_AUTH_MARKERS = (
+    "permission denied",
+    "too many authentication failures",
+    "no such identity",
+    "not accessible",           # identity file missing or unreadable
+    "unprotected private key",  # mode 0644 on the key; ssh refuses to use it
+)
+_HOST_KEY_MARKERS = (
+    "host key verification failed",
+    "remote host identification has changed",
+)
+# The far end went away mid-command. THIS IS WHAT A SUCCESSFUL REBOOT LOOKS
+# LIKE -- the command tore down the transport carrying its own result -- so it
+# is a distinct class and never a fault on its own.
+_LOST_MARKERS = (
+    "closed by remote host",
+    "connection reset by peer",
+    "broken pipe",
+)
+_UNREACHABLE_MARKERS = (
+    "no route to host",
+    "connection refused",
+    "connection timed out",
+    "network is unreachable",
+    "name or service not known",
+    "could not resolve hostname",
+    "operation timed out",
+    "host is down",
+)
+
+
+def _classify_ssh(rc: int | None, stderr: str) -> str:
+    """What KIND of failure this was, from ssh's own words.
+
+    Order matters. Host-key and transport-lost are checked BEFORE auth
+    because both can carry a "Permission denied" line behind them, and a
+    changed host key is not a credential the operator can re-enter.
+
+    An unrecognised 255 lands on UNREACHABLE rather than AUTH: the cost of
+    calling a network fault a credential fault is a reauth card nobody can
+    satisfy, which is worse than the cost of the reverse.
+    """
+    if rc == 0:
+        return SSH_OK
+    low = (stderr or "").lower()
+    if rc is None:
+        # Spawn failure or our own timeout -- ssh never said anything.
+        return SSH_UNREACHABLE
+    if rc != 255:
+        return SSH_REMOTE
+    if any(m in low for m in _HOST_KEY_MARKERS):
+        return SSH_HOST_KEY
+    if any(m in low for m in _LOST_MARKERS):
+        return SSH_TRANSPORT_LOST
+    if any(m in low for m in _AUTH_MARKERS):
+        return SSH_AUTH
+    if any(m in low for m in _UNREACHABLE_MARKERS):
+        return SSH_UNREACHABLE
+    return SSH_UNREACHABLE
+
+
 def _parse_kv(text: str) -> dict[str, str] | None:
     """None if the end marker is missing -- a truncated read must not read as
     a read that found nothing."""
@@ -491,6 +579,20 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.reboot_count: int = 0
         self._last_uptime_secs: float | None = None
 
+        # Consecutive AUTH-classified polls, and whether a reauth flow has
+        # already been asked for. The flag is not a second copy of the count:
+        # async_start_reauth is idempotent, but re-calling it every 60s for as
+        # long as a key stays rotated is noise in the flow log for no gain.
+        self._auth_fails = 0
+        self._reauth_started = False
+
+        # Set for the whole of a remote apt run. Lives HERE, not on the update
+        # entity, because the thing that must read it is in another platform:
+        # button.py refuses to reboot a host that is mid-upgrade, and dpkg
+        # interrupted by a reboot is the worst outcome this integration can
+        # produce (#11).
+        self.install_in_progress = False
+
         # The last remote upgrade's own last words, and where its log actually
         # landed. IN MEMORY ONLY, on purpose: the store above carries a shape
         # discriminator that would have to move to admit one more key, and
@@ -637,7 +739,29 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # --- transport ----------------------------------------------------------
 
     async def _ssh(self, script: str, timeout: int) -> dict[str, str] | None:
-        rc, out, _err = await self._ssh_raw(script, timeout)
+        """The POLLING read. Returns None on any failure, exactly as before --
+        the classification is recorded as a side effect rather than returned,
+        so every existing caller keeps its contract."""
+        rc, out, err = await self._ssh_raw(script, timeout)
+        kind = _classify_ssh(rc, err)
+        if kind == SSH_AUTH:
+            self._auth_fails += 1
+        elif kind != SSH_UNREACHABLE or rc is not None:
+            # A reachable host that answered anything at all clears the count.
+            # A timeout (rc None) does NOT clear it: a host that has stopped
+            # answering cannot testify that its key is fine.
+            self._auth_fails = 0
+        if kind == SSH_HOST_KEY:
+            # Needs an edit to known_hosts, which no reauth form can make and
+            # no amount of waiting fixes -- LAW.md §15: a fault nobody can
+            # wait out stays a warning.
+            _LOGGER.warning(
+                "%s: ssh host key verification failed -- the host's key does "
+                "not match %s. Not a credential problem and not fixable from "
+                "the UI; the entry stays configured and this host reads "
+                "unreachable until it is resolved on disk.",
+                self.hostname, DEFAULT_KNOWN_HOSTS,
+            )
         if rc != 0:
             return None
         return _parse_kv(out)
@@ -675,25 +799,32 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_exec(
         self, script: str, timeout: int = EXEC_TIMEOUT
-    ) -> tuple[bool, str]:
-        """Run a one-off command and return (ok, stdout). Used by the button
-        and the update entity, never by a polling path.
+    ) -> tuple[bool, str, str]:
+        """Run a one-off command. Returns (ok, stdout, kind). Used by the
+        button and the update entity, never by a polling path.
 
         `ok` says only that ssh itself succeeded. Callers verify the EFFECT by
         reading the host back -- a zero exit is not proof of a state change.
+
+        `kind` is what _classify_ssh made of the failure, and it is the third
+        element rather than a coordinator attribute deliberately: a caller
+        reading it off `self` would be reading whatever the last call left
+        there, which is the shape that goes wrong exactly once, under load,
+        with no way to reproduce it.
         """
         if self.offline_expected:
             _LOGGER.warning(
                 "%s: refusing to act on a host marked offline_expected",
                 self.hostname,
             )
-            return False, ""
+            return False, "", SSH_REMOTE
         rc, out, err = await self._ssh_raw(script, timeout)
+        kind = _classify_ssh(rc, err)
         if rc != 0:
-            _LOGGER.error("%s: command failed rc=%s: %s", self.hostname, rc,
-                          err[:300] or out[:300])
-            return False, out
-        return True, out
+            _LOGGER.error("%s: command failed rc=%s (%s): %s", self.hostname,
+                          rc, kind, err[:300] or out[:300])
+            return False, out, kind
+        return True, out, kind
 
     # --- update ---------------------------------------------------------
 
@@ -714,6 +845,37 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         return streak
 
+    def _check_auth(self) -> None:
+        """Ask for a new credential when ssh has said permission-denied twice
+        running, and NEVER raise to do it.
+
+        ConfigEntryAuthFailed is the rule's own instrument and is deliberately
+        not used. Raising from the polling path leaves coordinator.data at the
+        PREVIOUS poll's values while last_update_success goes false -- and the
+        two entities that override `available` to stay up would then go on
+        publishing the last good reading, so a host whose key was revoked
+        would read healthy on the one surface built to say otherwise. That is
+        the exact failure LAW.md §11's never-raise contract exists to refuse,
+        so the flow is started directly and the poll still returns a truthful
+        dict saying the host did not answer.
+
+        async_start_reauth is idempotent, but the flag stops it being called
+        every 60s for as long as a key stays rotated.
+        """
+        if self._auth_fails < SSH_AUTH_FAIL_DWELL:
+            self._reauth_started = False
+            return
+        if self._reauth_started:
+            return
+        self._reauth_started = True
+        _LOGGER.warning(
+            "%s: ssh refused this entry's credential on %s consecutive polls "
+            "-- user %s with key %s. This is not a network fault and will not "
+            "clear itself; asking for a new key.",
+            self.hostname, self._auth_fails, self.ssh_user, self.ssh_key,
+        )
+        self.entry.async_start_reauth(self.hass)
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Always returns a dict. Never raises UpdateFailed -- see
         kiosk_pi/coordinator.py for why: raising takes every entity
@@ -723,8 +885,10 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Short-circuits with NO network i/o at all, and scores clean
             # rather than red -- a host that is meant to be off is not a fault.
             self._ssh_fails = 0
+            self._auth_fails = 0
             return {
                 "offline_expected": True,
+                "auth_failed": False,
                 "online": False,
                 "ssh_ok": False,
                 "ssh": {},
@@ -737,6 +901,7 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         fast = await self._ssh(FAST_CMD, SSH_FAST_TIMEOUT)
         self._ssh_fails = self._track("ssh", fast is not None, self._ssh_fails)
         metrics = _metrics(fast)
+        self._check_auth()
 
         # Uptime only ever increases between two polls of the same boot; any
         # decrease is proof the host restarted, whether or not a miss was
@@ -783,6 +948,7 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # collapsing them would be a rename with no benefit.
         return {
             "offline_expected": False,
+            "auth_failed": self._auth_fails >= SSH_AUTH_FAIL_DWELL,
             "online": fast is not None,
             "ssh_ok": fast is not None,
             "ssh": fast or {},

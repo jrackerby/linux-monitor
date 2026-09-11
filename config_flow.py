@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -201,6 +202,88 @@ class LinuxMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    # --- reauth -------------------------------------------------------------
+    #
+    # WHAT THIS IS FOR. ssh has no password to expire, so it is easy to assume
+    # a key-based integration needs no reauth path at all. It needs one more
+    # than a password integration does: a rotated key, a revoked
+    # authorized_keys line and a deleted account all present as an unreachable
+    # host, and before this the ONLY way to supply a new key was to delete the
+    # entry and recreate it -- which drops this integration's .storage ledger
+    # and with it every package's first-seen timestamp and the last applied
+    # upgrade (#14). The recovery cost more than the fault.
+    #
+    # coordinator._check_auth starts this flow, on ssh's own permission-denied
+    # and never on a timeout. See there for why it does not raise
+    # ConfigEntryAuthFailed to do it.
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """PROBED BEFORE IT IS STORED, over the account, key and address the
+        entry will actually poll with -- the same rule async_step_user follows
+        and for the same reason. A reauth form that stores whatever it is
+        handed is a config flow that certifies nothing, at the one moment the
+        operator is most sure they have fixed it.
+
+        THE HOST'S OWN NAME IS CHECKED TOO. A credential that works but
+        answers to a different hostname is not this entry's host: the address
+        was reassigned, or the key was put on the wrong machine. Storing it
+        would leave the entry quietly monitoring something else under the old
+        unique_id, which is worse than refusing.
+        """
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            ssh_user = user_input[CONF_SSH_USER]
+            ssh_key = user_input[CONF_SSH_KEY]
+            reported = await _probe_hostname(
+                entry.data[CONF_HOST], ssh_user, ssh_key
+            )
+            expected = str(entry.data.get(CONF_HOSTNAME) or "").strip()
+            if reported is None:
+                errors["base"] = "cannot_connect"
+            elif expected and reported.strip().lower() != expected.lower():
+                _LOGGER.warning(
+                    "%s: reauth probe reached a host calling itself %s -- "
+                    "refusing to repoint this entry",
+                    expected, reported,
+                )
+                errors["base"] = "wrong_host"
+            else:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        CONF_SSH_USER: ssh_user,
+                        CONF_SSH_KEY: ssh_key,
+                    },
+                )
+
+        suggested = user_input or entry.data
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SSH_USER,
+                        default=suggested.get(CONF_SSH_USER, DEFAULT_SSH_USER),
+                    ): str,
+                    vol.Required(
+                        CONF_SSH_KEY,
+                        default=suggested.get(CONF_SSH_KEY, DEFAULT_SSH_KEY),
+                    ): str,
+                }
+            ),
+            description_placeholders={"host": entry.title},
+            errors=errors,
+        )
 
     @staticmethod
     @callback
