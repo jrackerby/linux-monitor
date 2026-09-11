@@ -1,0 +1,263 @@
+# Gap-list against the Home Assistant integration quality scale.
+#
+# WHY THIS FILE EXISTS AND WHAT IT IS NOT. LAW.md §15: the quality scale is
+# the build standard for every custom_components/* repo in this estate.
+# Bronze is the floor for anything shipped; Silver is the target for anything
+# reading a device, a service, or another integration's entities. This is
+# integration_type: device polling real hosts over ssh, so SILVER IS THE
+# TARGET. See jrackerby/linux-monitor#2.
+#
+# NOTHING VALIDATES THIS FILE. hassfest's validate_iqs_file opens with
+# `if not integration.core: return`, so a custom component's quality_scale.yaml
+# is never read -- while manifest.json's schema still ACCEPTS a quality_scale
+# key. A tier declared there would be a self-claim with no gate behind it, and
+# this repo does not declare one: `config-flow-test-coverage` is todo, so
+# Bronze is not met and saying otherwise in the manifest would be the exact
+# confidently-wrong artefact that propagates.
+#
+# SCOPE: BRONZE AND SILVER ONLY, deliberately. hassfest's SCHEMA requires an
+# entry for every rule in ALL_RULES, Gold and Platinum included, so this file
+# would not validate if it ever were validated. Assessing twenty-one Gold rules
+# for a tier nobody is aiming at produces padding, not evidence. Add them when
+# Gold becomes the target.
+#
+# Rule names are read from ALL_RULES in home-assistant/core's
+# script/hassfest/quality_scale.py, never from the docs page, which names the
+# tiers and not the rules. Read at core@dev on 2026-09-11.
+
+rules:
+  # --- BRONZE ---------------------------------------------------------------
+
+  action-setup:
+    status: exempt
+    comment: >
+      The integration registers no actions. Everything it offers is an entity:
+      the update entity's install, the reboot button's press. There is no
+      services.yaml and no async_register_admin_service call, so there is
+      nothing for this rule to move out of async_setup_entry.
+
+  appropriate-polling: done
+  # UPDATE_INTERVAL is 60s for the fast block (uptime, load, memory, disk,
+  # temperature), and the expensive apt/kernel block runs on its own longer
+  # sub-interval inside that loop with its own retry interval on failure. A
+  # host's patch state does not move minute to minute; its reachability does.
+
+  brands:
+    status: exempt
+    comment: >
+      brands is an accepted PR against home-assistant/brands, which takes core
+      integrations. This is a custom component installed through HACS as a
+      custom repository and is not headed for core. validate.yml passes
+      `ignore: brands` to hacs/action for the same reason, with that reasoning
+      recorded beside it.
+
+  common-modules: done
+  # coordinator.py holds the single DataUpdateCoordinator; entity.py holds the
+  # one base class carrying DeviceInfo, unique_id and the availability rule.
+  # No platform defines a second coordinator or a second DeviceInfo.
+
+  config-flow: done
+  # config_flow: true in the manifest, config_flow.py present, one entry per
+  # host, no YAML import path. strings.json carries data_description for the
+  # two fields whose consequences are not obvious from the label (ssh_user,
+  # offline_expected) and for both options fields.
+
+  config-flow-test-coverage:
+    status: todo
+    comment: >
+      THERE IS NO TEST SUITE IN THIS REPO AT ALL -- no tests/, no pytest
+      configuration, and CI runs hassfest and hacs/action only. This is the
+      Bronze blocker: every other Bronze rule here is done or exempt. The flow
+      that most needs covering is the one this repo is the estate's worked
+      example of -- _probe_hostname and _probe_sudo returning None on every
+      failure mode (unreachable, wrong key, no such account, missing end
+      marker) and the options flow refusing to store allow_install on any of
+      them.
+
+  dependency-transparency: done
+  # requirements is [] -- there is no PyPI dependency to be transparent about.
+  # The integration shells out to the ssh binary already present in the Home
+  # Assistant container, which is a runtime assumption rather than a
+  # dependency this rule governs. Recorded here so the empty list is read as
+  # deliberate rather than as an omission.
+
+  docs-actions:
+    status: exempt
+    comment: No actions to document -- see action-setup.
+
+  docs-conditions:
+    status: exempt
+    comment: The integration provides no conditions.
+
+  docs-high-level-description: done
+  # README opens with what the integration is, what it reads, and the fact
+  # that every reading comes over ssh with nothing installed on the host.
+
+  docs-installation-instructions: done
+  # README ## Install: HACS custom repository, the category, the restart, and
+  # why the integration lives at the repository root (hacs.json
+  # content_in_root).
+
+  docs-removal-instructions:
+    status: todo
+    comment: >
+      README has no removal section. It needs one, and it needs to say what
+      removal destroys rather than just how to do it: deleting the config
+      entry drops this integration's .storage ledger with it, and that ledger
+      is the ONLY record of when each pending security package was first seen
+      and when a remote upgrade last landed. Neither is reconstructible from
+      recorder history, which preserves the published surface and not the rows
+      behind it (LAW.md §5). Removing the entry IS that delete.
+
+  docs-triggers:
+    status: exempt
+    comment: The integration provides no triggers.
+
+  entity-event-setup:
+    status: exempt
+    comment: >
+      Nothing here subscribes to events from a library. Every entity is a
+      CoordinatorEntity reading a polled dict; there is no push channel to
+      attach or detach, so there is nothing to move into
+      async_added_to_hass/async_will_remove_from_hass.
+
+  entity-unique-id: done
+  # Assigned once in LinuxMonitorEntity.__init__ as
+  # <configured hostname, lowercased>_<platform key>, and FROZEN: it is built
+  # from entry.data's hostname and the platform's own key, neither of which the
+  # GH-470 Glances removal touched.
+
+  has-entity-name: done
+  # _attr_has_entity_name = True on the shared base, so every platform
+  # inherits it and no platform can quietly opt out.
+
+  runtime-data: done
+  # entry.runtime_data holds the coordinator, typed through the
+  # LinuxMonitorConfigEntry alias in __init__.py. No hass.data[DOMAIN].
+
+  test-before-configure: done
+  # THE RULE THIS REPO IS THE ESTATE'S WORKED EXAMPLE OF, and the reason
+  # LAW.md §9 carries the channel rule. The old flow asked a Glances daemon for
+  # a hostname while the integration polled over ssh, so an entry was created
+  # against an ssh account that did not exist on that machine, read healthy for
+  # weeks on the other channel, and went dark the day the daemon broke. The
+  # flow now probes over THE SSH CREDENTIAL THE ENTRY WILL POLL WITH -- same
+  # account, same key, same address -- and the options flow proves the sudo
+  # grant the same way, with `sudo -n true`, before it will store
+  # allow_install. An unreachable host is a refusal, not a pass.
+
+  test-before-setup:
+    status: exempt
+    comment: >
+      DEVIATION, RULED, WITH A CITATION -- LAW.md §11 and §15. The rule's
+      coordinator example raises UpdateFailed/ConfigEntryNotReady when the
+      device or service cannot be reached. This coordinator NEVER raises, by
+      contract: a monitor that disappears with its subject cannot report the
+      subject down, and an unavailable entity's attributes vanish, which is
+      how a broken collector reads green. async_config_entry_first_refresh is
+      called, and _async_update_data always returns a dict, so setup cannot
+      fail on an unreachable host -- which is the correct behaviour for an
+      entry that may legitimately be created for a host marked
+      offline_expected. What this rule protects against is covered earlier
+      instead, at configure time, by test-before-configure.
+
+  unique-config-entry: done
+  # async_set_unique_id(hostname.lower()) then _abort_if_unique_id_configured,
+  # with already_configured in strings.json. Keyed on the host's own reported
+  # name rather than the address, so one host added twice under two addresses
+  # is still one entry.
+
+  # --- SILVER ---------------------------------------------------------------
+
+  action-exceptions:
+    status: todo
+    comment: >
+      HALF DONE, AND THE DONE HALF IS THE LOUD ONE. update.async_install
+      raises HomeAssistantError on every refusal -- offline_expected, no
+      opt-in, no reported state, nothing pending, a truncated read, a non-zero
+      apt exit -- deliberately, because a patch control that declines silently
+      leaves the operator believing the host was patched. The reboot BUTTON
+      does not: async_press logs at INFO when async_exec comes back not-ok and
+      raises nothing, so a press against an unreachable host, or one refused
+      for offline_expected, looks identical in the UI to one that worked. The
+      button needs the same treatment as install.
+
+  config-entry-unloading: done
+  # async_unload_entry forwards to async_unload_platforms; the update listener
+  # is registered through entry.async_on_unload. No unmanaged subscriptions:
+  # the coordinator holds no transport open between polls -- each poll is a
+  # separate ssh subprocess that has already exited.
+
+  docs-configuration-parameters: done
+  # Both options carry data_description in strings.json, and README's
+  # "Remote patching and reboot" section states what allow_install actually
+  # grants, what is probed before it is stored, and that turning it off is
+  # never gated.
+
+  docs-installation-parameters: done
+  # README ## Configuration lists every config-flow field; strings.json
+  # carries data_description for ssh_user and offline_expected, the two whose
+  # consequences are not obvious from the label -- offline_expected in
+  # particular is load-bearing rather than cosmetic and MASKS a host's
+  # disappearance if set carelessly, which the description says.
+
+  entity-unavailable: done
+  # LinuxMonitorEntity.available takes an individual reading unavailable when
+  # its source is missing or the host is offline_expected.
+  #
+  # TWO ENTITIES DELIBERATELY OVERRIDE THAT AND STAY AVAILABLE: the health
+  # binary_sensor and the reboot counter. That is LAW.md §11's contract, not
+  # an oversight -- those two exist to REPORT the host's absence, and an
+  # entity that goes unavailable with its subject cannot. Recorded here rather
+  # than left to be re-derived: the exception is per-entity and ruled, so the
+  # rule is met everywhere it governs.
+
+  integration-owner: done
+  # codeowners: ["@jrackerby"] in manifest.json.
+
+  log-when-unavailable: done
+  # Coordinator._track logs ONCE at the crossing and ONCE on recovery, naming
+  # the missed-poll count, rather than every 60s -- a warning that repeats
+  # every poll is as unreadable as no warning. It crosses at
+  # TRANSPORT_FAIL_DWELL consecutive misses rather than the first miss, which
+  # is the same threshold the health binary_sensor reports on, so the log and
+  # the entity cannot disagree about when a host went down.
+
+  parallel-updates:
+    status: todo
+    comment: >
+      No platform module defines PARALLEL_UPDATES. Every platform here is
+      coordinator-driven and none of them polls independently, so the correct
+      declaration is PARALLEL_UPDATES = 0 on binary_sensor, sensor and update;
+      button and update also carry ACTIONS (press, install) that reach the
+      host over ssh, so the value there is a statement about how many of those
+      may run at once and wants deciding rather than copying. Undeclared is
+      not the same as zero, and leaving it undeclared says nothing.
+
+  reauthentication-flow:
+    status: todo
+    comment: >
+      There is no reauth step, and nothing raises ConfigEntryAuthFailed. A
+      rotated ssh key, a revoked authorized_keys entry or a deleted account
+      presents exactly like an unreachable host: _ssh_raw returns None, the
+      streak counter climbs, and the health sensor reports a problem. That is
+      not wrong -- it IS a fault -- but it sends the operator to look at the
+      network for something only a credential change fixes, and there is no
+      path to supply a new key short of deleting and recreating the entry,
+      which drops the .storage ledger (see docs-removal-instructions). ssh's
+      own exit codes and stderr distinguish "permission denied" from "no route
+      to host"; the failure path currently discards that distinction.
+
+  test-coverage:
+    status: todo
+    comment: >
+      No test suite -- see config-flow-test-coverage. Beyond the config flow,
+      the things that most need covering are the ones whose defects are silent
+      by construction: _parse_kv returning None on a missing end marker rather
+      than an empty dict, the typed readers landing on None rather than a
+      plausible value, security_pkgs distinguishing "nobody asked" from "the
+      host answered and had none", and update.py's _reboot_owed refusing to
+      assume a reboot it cannot prove. LAW.md §15 also requires that the
+      suite's third-party imports be declared BESIDE it rather than in the
+      workflow, so a clean runner fails as a missing declaration rather than
+      as a broken test.
