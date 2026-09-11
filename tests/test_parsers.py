@@ -85,8 +85,8 @@ def test_parse_kv_keeps_every_other_separator_splitlines_would_have_taken() -> N
     none of them ends a record here: the transport's only separator is the
     newline the shell block echoes.
     """
-    parsed = _parse_kv("CPU_MODEL=a\x0bb\x0cc\x85d e\n__END__\n")
-    assert parsed == {"CPU_MODEL": "a\x0bb\x0cc\x85d e"}
+    parsed = _parse_kv("CPU_MODEL=a\x0bb\x0cc\x85d\u2028e\n__END__\n")
+    assert parsed == {"CPU_MODEL": "a\x0bb\x0cc\x85d\u2028e"}
 
 
 def test_parse_kv_stops_at_a_marker_carrying_a_carriage_return() -> None:
