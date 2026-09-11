@@ -6,7 +6,7 @@ probe returns a hostname -- it is that it goes out over THE ENTRY'S OWN
 CREDENTIAL and that every way of failing lands on None rather than on
 something a caller would store.
 
-The estate's worked example is what happens when it does not: a flow that
+The worked example is what happens when it does not: a flow that
 asked a Glances daemon for a hostname while the integration polled over ssh
 created an entry against an account that did not exist on that machine, read
 healthy for weeks on the other channel, and went dark the day the daemon

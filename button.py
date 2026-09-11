@@ -6,11 +6,11 @@ the single grant covering both. On an entry that has not opted in the button
 is ABSENT rather than present-and-refusing: a control that is visible but
 always fails trains an operator to ignore what it says.
 
-NAMED "Reboot host", NOT "Reboot". kiosk_pi registers button.<host>_reboot
-against a device carrying the same name on the four kiosk hosts, and Home
-Assistant mints an entity_id from device name plus entity name -- a colliding
-id is taken as _2 and never reclaimed even after the other entity goes away
-(TOOLS.md). update.py's header carries the same note for the same reason.
+NAMED "Reboot host", NOT "Reboot". Another integration on the same host may
+already register button.<host>_reboot against a device carrying the same name,
+and Home Assistant mints an entity_id from device name plus entity name -- a
+colliding id is taken as _2 and never reclaimed, even after the other entity
+goes away. update.py's header carries the same note for the same reason.
 
 A REBOOT CANNOT BE VERIFIED BY READ-BACK, BY CONSTRUCTION: it tears down the
 transport it was issued over, so ssh cannot return cleanly and a non-zero exit

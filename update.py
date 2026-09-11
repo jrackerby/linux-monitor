@@ -42,12 +42,11 @@ not accepted until config_flow has proven sudo over this entry's own SSH
 credential. A host that has not opted in does not ADVERTISE install at all --
 the control is absent from the Updates panel rather than present and refusing.
 
-NAMED "System updates", NOT "System". kiosk_pi registers update.<host>_system
-against a device carrying the same name on the four kiosk hosts, and Home
-Assistant mints an entity_id from device name plus entity name: a colliding id
-is taken as _2 and never reclaimed, even after the other entity goes away
-(TOOLS.md). The two integrations therefore coexist under distinct ids while
-the kiosk-side entity is retired.
+NAMED "System updates", NOT "System". Another integration on the same host may
+already register update.<host>_system against a device carrying the same name,
+and Home Assistant mints an entity_id from device name plus entity name: a
+colliding id is taken as _2 and never reclaimed, even after the other entity
+goes away. The distinct name is what keeps the two from colliding.
 """
 
 from __future__ import annotations

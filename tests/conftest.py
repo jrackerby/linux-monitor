@@ -234,7 +234,7 @@ def mounted(hass, entry_factory, enable_custom_integrations):  # noqa: ARG001
 
     This is the only fixture that exercises the wiring rather than a class in
     isolation: the platform forwards, the entity registry, DeviceInfo, and the
-    availability overrides LAW.md §11 contracts for.
+    availability overrides exist for.
 
     enable_custom_integrations is a DEPENDENCY rather than a mark on each
     module that mounts something. phcc's version drops the loader's cache so

@@ -10,13 +10,13 @@ from .coordinator import LinuxMonitorCoordinator
 
 
 class LinuxMonitorEntity(CoordinatorEntity[LinuxMonitorCoordinator]):
-    """_attr_has_entity_name makes the entity_id <device_slug>_<key> --
-    sensor.devhost01_cpu -- same reasoning as kiosk_pi/entity.py.
+    """_attr_has_entity_name makes the entity_id <device_slug>_<key>, e.g.
+    sensor.<host>_cpu.
 
     unique_id is <configured hostname, lowercased>_<key> and is FROZEN. It is
     built from entry.data's hostname and the platform's own key, neither of
-    which the GH-470 Glances removal touched, so every entity keeps the id it
-    was registered under.
+    which the Glances removal touched, so every entity keeps the id it was
+    registered under.
     """
 
     _attr_has_entity_name = True

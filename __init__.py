@@ -42,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LinuxMonitorConfigEntry)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """1 -> 2 (GH-470): strip the vestigial glances_port from entry data.
+    """1 -> 2: strip the vestigial glances_port from entry data.
 
     STRIPPED RATHER THAN LEFT INERT, deliberately. Leaving it would mean
     .storage keeps advertising a port that no code path reads and no daemon

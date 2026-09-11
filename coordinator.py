@@ -1,6 +1,6 @@
 """Data coordinator for a single generic monitored host.
 
-ONE TRANSPORT: ssh. See const.py for why the Glances daemon is gone (GH-470)
+ONE TRANSPORT: ssh. See const.py for why the Glances daemon is gone
 and why CPU percent is sampled twice inside one round trip rather than
 delta'd across polls.
 
@@ -50,8 +50,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# /bin/sh is dash on every host here (verified 2026-09-01 on devhost01 and the
-# Pis), so this block is POSIX sh -- no bashisms, no <<<, no `local`, and no
+# /bin/sh is dash on Debian and Raspberry Pi OS (verified 2026-09-01 on both),
+# so this block is POSIX sh -- no bashisms, no <<<, no `local`, and no
 # `cmd | while read` when a value has to survive the loop, because dash runs
 # the right-hand side of a pipe in a subshell.
 _HWMON_CASE = "|".join(CPU_HWMON_NAMES)
@@ -101,21 +101,21 @@ echo "DISTRO_VERSION=$(sed -n 's/^VERSION_ID=//p' /etc/os-release 2>/dev/null | 
 # carries `Model : Raspberry Pi 4 Model B Rev 1.5` -- the BOARD, which is what
 # an operator wants on the device page -- and no 'model name' line at all. An
 # x86 box carries 'model name : Intel(R) Core(TM) i5-9500T ...' and no
-# capital-M Model line (verified on devhost01: the anchored grep returns
-# nothing), so the two never collide and neither needs an arch test.
+# capital-M Model line (verified: the anchored grep returns nothing), so the
+# two never collide and neither needs an arch test.
 CPUM=$(sed -n 's/^Model[ 	]*:[ 	]*//p' /proc/cpuinfo 2>/dev/null | head -1)
 [ -z "$CPUM" ] && CPUM=$(sed -n 's/^model name[ 	]*:[ 	]*//p' /proc/cpuinfo 2>/dev/null | head -1)
 echo "CPU_MODEL=$CPUM"
 
 # FILESYSTEMS AS INDEXED KEY GROUPS, NEVER A DELIMITED JOIN. A mount point
 # may contain any byte but NUL and newline, so no join character is safe
-# (LAW.md 4: a value joined into a delimited channel must not be able to
-# contain the delimiter). findmnt -r escapes whitespace as \x20, which the
+# -- a value joined into a delimited channel must not be able to contain the
+# delimiter. findmnt -r escapes whitespace as \x20, which the
 # Python side unescapes.
 #
 # --real drops pseudo filesystems AND the bind mounts that made Glances
-# report / four times on devhost01 (/, /home, /root, /var/tmp, all the same
-# device) while missing /boot entirely. -b gives bytes, matching the units
+# report / four times (/, /home, /root, /var/tmp, all the same device) while
+# missing /boot entirely. -b gives bytes, matching the units
 # Glances' psutil-derived size/used/free reported.
 OLDIFS=$IFS
 IFS='
@@ -143,8 +143,8 @@ echo "FS_N=$I"
 # temp1_input explicitly before the glob: on coretemp it is the package
 # sensor, and a bare temp*_input glob sorts temp10_input BEFORE temp1_input,
 # which would silently read a core instead of the package on any box with
-# ten or more sensors. Every read is guarded -- devhost01's iwlwifi_1 hwmon
-# answers ENODATA when the radio is idle, and an unguarded cat there emits
+# ten or more sensors. Every read is guarded -- an iwlwifi_1 hwmon answers
+# ENODATA when the radio is idle, and an unguarded cat there emits
 # an error line into a KEY=value channel.
 TEMP=""
 TEMPSRC=""
@@ -200,9 +200,9 @@ SUF="+${U#*+}"
 # alongside the signed linux-image-X for the SAME version -- the unsigned one
 # is the raw kernel binary the signed wrapper carries, never something
 # `uname -r` reports, but it sorts as "greater" than its own signed sibling
-# under -V and was read as a permanent one-version-ahead false positive on
-# devhost01 (measured 2026-08-21: both 6.12.101+deb13-amd64 and its -unsigned
-# twin installed, running the former, NEWEST landing on the latter).
+# under -V and was read as a permanent one-version-ahead false positive
+# (measured 2026-08-21: both 6.12.101+deb13-amd64 and its -unsigned twin
+# installed, running the former, NEWEST landing on the latter).
 NEWEST=$(dpkg-query -W -f='${Package}\n' 'linux-image-*' 2>/dev/null \
   | grep -E '^linux-image-[0-9]' | grep -F -- "$SUF" | grep -v -- '-unsigned$' \
   | sed 's/^linux-image-//' | sort -V | tail -1)
@@ -238,8 +238,8 @@ echo "__END__"
 # proves the ACCOUNT, KEY, HOST and SUDO GRANT that the apt and reboot blocks
 # will actually use, at the moment the operator opts in -- rather than
 # discovering at the first press that the read-only monitoring account was
-# never granted anything. LAW 9: a check on a different channel certifies
-# nothing, and it certifies nothing green.
+# never granted anything. A check on a different channel certifies nothing,
+# and it certifies nothing green.
 SUDO_PROBE_CMD = r"""
 sudo -n true 2>/dev/null && echo "SUDO=1" || echo "SUDO=0"
 echo "__END__"
@@ -586,8 +586,7 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # A crash-loop that self-heals inside TRANSPORT_FAIL_DWELL is invisible
         # to the health binary_sensor (its streak resets on the next good poll)
-        # -- measured on devhost01, GH-402: ~20 hard reboots in 24h tripped it
-        # once. This counter is the persistent record; it only ever grows.
+        # -- measured: ~20 hard reboots in 24h tripped it once. This counter is the persistent record; it only ever grows.
         self.reboot_count: int = 0
         self._last_uptime_secs: float | None = None
 
@@ -765,8 +764,8 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._auth_fails = 0
         if kind == SSH_HOST_KEY:
             # Needs an edit to known_hosts, which no reauth form can make and
-            # no amount of waiting fixes -- LAW.md §15: a fault nobody can
-            # wait out stays a warning.
+            # no amount of waiting fixes, and a fault nobody can wait out
+            # stays a warning.
             _LOGGER.warning(
                 "%s: ssh host key verification failed -- the host's key does "
                 "not match %s. Not a credential problem and not fixable from "
@@ -867,7 +866,7 @@ class LinuxMonitorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         two entities that override `available` to stay up would then go on
         publishing the last good reading, so a host whose key was revoked
         would read healthy on the one surface built to say otherwise. That is
-        the exact failure LAW.md §11's never-raise contract exists to refuse,
+        the exact failure the never-raise contract exists to refuse,
         so the flow is started directly and the poll still returns a truthful
         dict saying the host did not answer.
 

@@ -1,11 +1,10 @@
 # Gap-list against the Home Assistant integration quality scale.
 #
-# WHY THIS FILE EXISTS AND WHAT IT IS NOT. LAW.md §15: the quality scale is
-# the build standard for every custom_components/* repo in this estate.
-# Bronze is the floor for anything shipped; Silver is the target for anything
-# reading a device, a service, or another integration's entities. This is
-# integration_type: device polling real hosts over ssh, so SILVER IS THE
-# TARGET. See jrackerby/linux-monitor#2.
+# WHY THIS FILE EXISTS AND WHAT IT IS NOT. The quality scale is this
+# component's build standard. Bronze is the floor for anything shipped; Silver
+# is the target for anything reading a device, a service, or another
+# integration's entities. This is integration_type: device polling real hosts
+# over ssh, so SILVER IS THE TARGET. See #2.
 #
 # NOTHING VALIDATES THIS FILE. hassfest's validate_iqs_file opens with
 # `if not integration.core: return`, so a custom component's quality_scale.yaml
@@ -112,7 +111,7 @@ rules:
   # that ledger is the only record of each pending security package's
   # first-seen and of the last applied upgrade. Neither is reconstructible
   # from recorder history, which keeps the published surface and not the rows
-  # behind it (LAW.md §5), so re-adding the host restarts both clocks at zero
+  # behind it, so re-adding the host restarts both clocks at zero
   # and under-reports patch age. Names the file, says to copy it first, and
   # says what deliberately survives -- the SSH key and known_hosts are the
   # operator's, not this integration's.
@@ -133,7 +132,7 @@ rules:
   # Assigned once in LinuxMonitorEntity.__init__ as
   # <configured hostname, lowercased>_<platform key>, and FROZEN: it is built
   # from entry.data's hostname and the platform's own key, neither of which the
-  # GH-470 Glances removal touched.
+  # Glances removal touched.
 
   has-entity-name: done
   # _attr_has_entity_name = True on the shared base, so every platform
@@ -144,8 +143,8 @@ rules:
   # LinuxMonitorConfigEntry alias in __init__.py. No hass.data[DOMAIN].
 
   test-before-configure: done
-  # THE RULE THIS REPO IS THE ESTATE'S WORKED EXAMPLE OF, and the reason
-  # LAW.md §9 carries the channel rule. The old flow asked a Glances daemon for
+  # THE RULE THIS REPO IS THE WORKED EXAMPLE OF. The old flow asked a Glances
+  # daemon for
   # a hostname while the integration polled over ssh, so an entry was created
   # against an ssh account that did not exist on that machine, read healthy for
   # weeks on the other channel, and went dark the day the daemon broke. The
@@ -157,7 +156,7 @@ rules:
   test-before-setup:
     status: exempt
     comment: >
-      DEVIATION, RULED, WITH A CITATION -- LAW.md §11 and §15. The rule's
+      DEVIATION, RULED, AND RECORDED RATHER THAN SKIPPED. The rule's
       coordinator example raises UpdateFailed/ConfigEntryNotReady when the
       device or service cannot be reached. This coordinator NEVER raises, by
       contract: a monitor that disappears with its subject cannot report the
@@ -213,7 +212,7 @@ rules:
   # its source is missing or the host is offline_expected.
   #
   # TWO ENTITIES DELIBERATELY OVERRIDE THAT AND STAY AVAILABLE: the health
-  # binary_sensor and the reboot counter. That is LAW.md §11's contract, not
+  # binary_sensor and the reboot counter. That is the never-raise contract, not
   # an oversight -- those two exist to REPORT the host's absence, and an
   # entity that goes unavailable with its subject cannot. Recorded here rather
   # than left to be re-derived: the exception is per-entity and ruled, so the
@@ -252,8 +251,8 @@ rules:
       goes false, and the two entities that override `available` to stay up
       would then go on publishing the last good reading -- so a host whose key
       was revoked would read HEALTHY on the one surface built to say
-      otherwise. That is precisely what LAW.md §11's never-raise contract
-      exists to refuse. coordinator._check_auth calls
+      otherwise. That is precisely what the never-raise contract exists to
+      refuse. coordinator._check_auth calls
       entry.async_start_reauth directly and the poll still returns a truthful
       dict, so the operator gets the card AND the sensor stays honest.
 
@@ -270,7 +269,7 @@ rules:
     status: done
     comment: >
       227 tests, 807 of 807 statements, on homeassistant 2026.9.1 -- the
-      version the estate runs. Measured, and now GATED at that figure:
+      version you run. Measured, and now GATED at that figure:
       --cov-fail-under=100 in the workflow, set from the run rather than
       chosen in advance. Parking the gate at the scale's 95% while the suite
       achieves 100% would license exactly that much silent rot.
@@ -283,8 +282,8 @@ rules:
       async_setup_entry; one fixture that does, with only the ssh subprocess
       replaced, now exercises the platform forwards, the entity registry,
       DeviceInfo off the ssh read, and -- first time anywhere -- the
-      availability overrides §11 contracts for: that health and the reboot
-      counter stay up while their subject is down.
+      availability overrides the never-raise contract asks for: that health
+      and the reboot counter stay up while their subject is down.
 
       ONE LINE WAS DELETED RATHER THAN COVERED. entity.py's _metric had no
       callers, and dead code is unreachable by definition, so it was the
@@ -296,7 +295,7 @@ rules:
       and the comment saying why -- a reviewable claim, unlike a threshold
       quietly lowered.
 
-      Also satisfied: LAW.md §15's requirement that the suite's third-party
-      imports be declared BESIDE it rather than in the workflow.
+      Also satisfied: the requirement that the suite's third-party imports be
+      declared BESIDE it rather than in the workflow.
       requirements_test.txt does that, and tests/test_declared_dependencies.py
       checks it statically by AST on every commit.

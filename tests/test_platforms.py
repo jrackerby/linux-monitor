@@ -4,7 +4,8 @@ Everything else in this suite exercises a class in isolation. This module is
 the only one that proves the parts are connected -- that the platform forwards
 happen, that entities reach the registry under the ids the frozen unique_id
 scheme mints, that DeviceInfo is populated from the ssh read, and that the two
-entities LAW.md §11 contracts for stay available when their subject does not.
+entities the never-raise contract covers stay available when their subject
+does not.
 """
 
 from __future__ import annotations

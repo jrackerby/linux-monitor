@@ -9,7 +9,7 @@ DWELLS past TRANSPORT_FAIL_DWELL consecutive misses; KNOWN-BAD readings
 (disk/cpu over threshold) trip immediately -- the host answered and the
 answer was wrong, nothing to wait for.
 
-GH-470, ONE TRANSPORT NOW. The Glances daemon is gone, so glances_fails, the
+ONE TRANSPORT NOW. The Glances daemon is gone, so glances_fails, the
 min(glances_fails, ssh_fails) floor that used to require BOTH transports to
 have failed before calling a host unreachable, and the glances_ok /
 glances_missed_polls attributes are all removed rather than left publishing

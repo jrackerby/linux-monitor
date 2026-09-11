@@ -1,6 +1,6 @@
 """Entry setup, unload, and the migration that strips a dead key.
 
-The migration is the interesting one. GH-470 removed the Glances port, and the
+The migration is the interesting one. The Glances port was removed, and the
 key was STRIPPED from entry data rather than left inert: .storage would
 otherwise go on advertising a port no code path reads and no daemon has to be
 listening on, and the next person -- or the next session deriving inventory

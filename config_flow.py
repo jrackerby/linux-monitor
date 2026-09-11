@@ -2,12 +2,12 @@
 
 No DHCP step -- see const.py. Every host is added by hand.
 
-GH-470: the Glances port field is gone, and so is the Glances probe behind
-it. THE PROBE NOW USES THE SSH CREDENTIAL THE ENTRY WILL ACTUALLY POLL WITH,
-which is not merely a port change -- it closes the hole that produced the
-failure this whole change came out of. The old flow asked a Glances daemon
-for the hostname and never touched ssh, so prodhost01 was created against a
-`monitor` account that does not exist on that machine, the entry validated
+The Glances port field is gone, and so is the Glances probe behind it. THE
+PROBE NOW USES THE SSH CREDENTIAL THE ENTRY WILL ACTUALLY POLL WITH, which is
+not merely a port change -- it closes the hole that produced the failure this
+whole change came out of. The old flow asked a Glances daemon for the hostname
+and never touched ssh, so a host could be created against a `monitor` account
+that does not exist on that machine, the entry validated
 green, and the defect only surfaced weeks later when the daemon it WAS
 relying on broke. A config flow that does not exercise the transport is a
 config flow that certifies nothing.
@@ -134,7 +134,7 @@ async def _probe_sudo(host: str, ssh_user: str, ssh_key: str) -> bool:
     FALSE ON EVERY FAILURE, including a transport failure. The question being
     answered is "may this option be stored as True", and an unreadable host is
     not a yes. Storing the grant on a host that could not be asked is exactly
-    the shape LAW 9 names: a green check taken on a channel other than the one
+    the shape to avoid: a green check taken on a channel other than the one
     that will be used, which certifies nothing and certifies it green.
     """
     parsed = await _probe(
@@ -146,7 +146,7 @@ async def _probe_sudo(host: str, ssh_user: str, ssh_key: str) -> bool:
 
 
 class LinuxMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
-    # 2: glances_port dropped from entry data (GH-470). See
+    # 2: glances_port dropped from entry data. See
     # __init__.async_migrate_entry.
     VERSION = 2
 

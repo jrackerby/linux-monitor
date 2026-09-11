@@ -1,8 +1,8 @@
 name: release
 
-# HACS installs and upgrades from RELEASES. All seven component repos had zero
-# tags and zero releases (GH-483), so there was nothing for it to install even
-# once the packaging was right.
+# HACS installs and upgrades from RELEASES. This repository had zero tags and
+# zero releases, so there was nothing for HACS to install even once the
+# packaging was right.
 #
 # The trigger is manifest.json's own version field, because that is the number
 # Home Assistant already shows for the integration -- a separate release ritual
