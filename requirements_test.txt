@@ -1,0 +1,16 @@
+# TEST DEPENDENCIES LIVE HERE, BESIDE THE SUITE, AND CI INSTALLS FROM THIS
+# FILE. Not a list in the workflow: a second copy goes stale on the next
+# import added, and when it does the failure reads as a broken test rather
+# than as a missing declaration. LAW.md §15 -- tempest_wx is the estate's
+# worked example, green for months inside a shared venv that happened to
+# carry PyYAML, red at collection on its own repo's first clean runner.
+#
+# ONE PIN, AND IT DRAGS THE WHOLE CHANNEL. pytest-homeassistant-custom-component
+# pins homeassistant== exactly, so this line decides which Home Assistant the
+# suite runs against. 0.13.364 pins 2026.9.1 -- the version the estate is
+# actually running, which is the point: a suite green against a different core
+# than production certifies nothing about production (LAW.md §9).
+#
+# That pin also decides the INTERPRETER: homeassistant 2026.9.1 requires
+# Python >=3.14.2, so the workflow pins 3.14 and nothing older can run this.
+pytest-homeassistant-custom-component==0.13.364
