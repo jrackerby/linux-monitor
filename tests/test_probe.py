@@ -119,6 +119,10 @@ async def test_undecodable_output_does_not_raise() -> None:
         (b"HOSTNAME=\n__END__\n", None, "an empty name is not a name"),
         (b"HOSTNAME=   \n__END__\n", None, "nor is whitespace"),
         (b"__END__\n", None, "nor is a missing key"),
+        # The probe ITSELF failing, rather than answering with no name: no end
+        # marker means a truncated read, and the caller must not be handed a
+        # blank hostname it would then refuse for the wrong reason.
+        (b"HOSTNAME=testhost\n", None, "a truncated reply is not a name"),
     ],
 )
 async def test_probe_hostname(stdout, expected, why) -> None:

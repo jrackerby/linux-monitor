@@ -142,3 +142,117 @@ def coordinator_factory(hass, entry_factory):
         return LinuxMonitorCoordinator(hass, entry)
 
     return _make
+
+
+# --- a host that answers ----------------------------------------------------
+#
+# Realistic output for both collector blocks, so a mounted platform produces
+# the values a real one would rather than a wall of None. The numbers are
+# chosen to make the arithmetic checkable by eye: cpu 50%, memory 25%, disk
+# 40%, temperature 45.1C.
+
+FAST_OUT = """CPU_TOT_0=1000
+CPU_BUSY_0=100
+HOSTNAME=testhost
+UNAME=6.12.101+deb13-amd64
+UPTIME_SECS=9000.0
+CORES=4
+LOAD1=0.15
+LOAD5=0.20
+LOAD15=0.25
+MEM_TOTAL_KB=8000000
+MEM_AVAIL_KB=6000000
+DISTRO_NAME=Debian GNU/Linux
+DISTRO_VERSION=13
+CPU_MODEL=Intel(R) Core(TM) i5-9500T
+FS0_DEV=/dev/sda1
+FS0_TYPE=ext4
+FS0_MNT=/
+FS0_SIZE=100000
+FS0_USED=40000
+FS0_FREE=60000
+FS_N=1
+CPU_TEMP_MC=45123
+CPU_TEMP_SRC=coretemp
+CPU_TOT_1=2000
+CPU_BUSY_1=600
+__END__
+"""
+
+SLOW_OUT = """KERNEL_INSTALLED=6.12.101+deb13-amd64
+UPGRADABLE=4
+SECURITY=2
+SECURITY_PKGS=libssl3,curl
+UNATTENDED=1
+APT_LISTS_MTIME=1757000000
+__END__
+"""
+
+
+def ssh_answers(fast: str = FAST_OUT, slow: str = SLOW_OUT, rc: int = 0):
+    """A stand-in for _ssh_raw that answers the two blocks differently.
+
+    Dispatches on a token only the slow block carries. Returning one canned
+    payload for both would let the slow block's keys leak into the fast read
+    and vice versa, which is precisely the confusion the strict KEY=value
+    contract exists to prevent -- a test that does it is not exercising the
+    split it claims to.
+    """
+
+    async def _raw(script, timeout):  # noqa: ARG001
+        if "KERNEL_INSTALLED" in script:
+            return rc, slow, ""
+        return rc, fast, ""
+
+    return _raw
+
+
+def patch_transport(answer=None):
+    """Patch the ssh stand-in onto the COORDINATOR CLASS, adapting for `self`.
+
+    Exported rather than kept inside the mounted fixture because a test that
+    reloads an entry has to re-apply the patch itself, and writing the adapter
+    out a second time is how the two drift. Fakes stay two-argument here and
+    everywhere else.
+    """
+    from unittest.mock import patch
+
+    from custom_components.linux_monitor.coordinator import LinuxMonitorCoordinator
+
+    answer = answer or ssh_answers()
+
+    async def _as_method(_self, script, timeout):
+        return await answer(script, timeout)
+
+    return patch.object(LinuxMonitorCoordinator, "_ssh_raw", _as_method)
+
+
+@pytest.fixture
+def mounted(hass, entry_factory, enable_custom_integrations):  # noqa: ARG001
+    """An entry set up for real, through async_setup_entry, with all four
+    platforms mounted and only the ssh subprocess replaced.
+
+    This is the only fixture that exercises the wiring rather than a class in
+    isolation: the platform forwards, the entity registry, DeviceInfo, and the
+    availability overrides LAW.md §11 contracts for.
+
+    enable_custom_integrations is a DEPENDENCY rather than a mark on each
+    module that mounts something. phcc's version drops the loader's cache so
+    Home Assistant goes and finds this integration; without it setup fails
+    with "Integration not found", and requiring every future module to
+    remember a marker is how that comes back.
+    """
+    async def _make(*, options=None, data=None, raw=None):
+        entry = entry_factory(options=options, data=data)
+        entry.add_to_hass(hass)
+
+        # The stand-in goes on the CLASS -- the coordinator does not exist
+        # until async_setup_entry builds one -- so it is called as a method
+        # and `self` arrives first. patch_transport adapts for that in one
+        # place; see there.
+        with patch_transport(raw):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+        return entry
+
+    return _make

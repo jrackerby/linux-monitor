@@ -13,13 +13,14 @@
 # key. A tier declared there would be a self-claim with no gate behind it, and
 # this repo still does not declare one.
 #
-# BRONZE IS NOW MET by this file's own reckoning -- every Bronze rule below is
-# done or exempt -- and the manifest key stays absent anyway, because the
-# reason for leaving it out was never that Bronze was unmet. It is that the
-# key asserts a tier nothing checks. The evidence is this file and the run it
-# cites; a word in the manifest would add a claim without adding a check.
+# BRONZE AND SILVER ARE BOTH MET by this file's own reckoning -- every rule
+# below is done or exempt -- and the manifest key stays absent anyway, because
+# the reason for leaving it out was never that a tier was unmet. It is that
+# the key asserts a tier nothing checks. The evidence is this file and the run
+# it cites; a word in the manifest would add a claim without adding a check.
 #
-# SILVER IS NOT MET: `test-coverage` is todo at a measured 70%.
+# GOLD IS NOT CLAIMED AND ITS RULES ARE NOT ASSESSED. See the scope note
+# below: twenty-one rows nobody is aiming at would be padding, not evidence.
 #
 # SCOPE: BRONZE AND SILVER ONLY, deliberately. hassfest's SCHEMA requires an
 # entry for every rule in ALL_RULES, Gold and Platinum included, so this file
@@ -266,25 +267,36 @@ rules:
       host.
 
   test-coverage:
-    status: todo
+    status: done
     comment: >
-      THE LAST SILVER GAP, and the number is measured rather than estimated:
-      130 tests, 70% overall, on homeassistant 2026.9.1 -- the version the
-      estate runs.
+      227 tests, 807 of 807 statements, on homeassistant 2026.9.1 -- the
+      version the estate runs. Measured, and now GATED at that figure:
+      --cov-fail-under=100 in the workflow, set from the run rather than
+      chosen in advance. Parking the gate at the scale's 95% while the suite
+      achieves 100% would license exactly that much silent rot.
 
-      Where it is thin is specific. sensor.py and binary_sensor.py are at 0%:
-      nothing yet mounts a platform, so every entity's reading, availability
-      override and attribute block is unexercised, and the health sensor's
-      rung logic in particular is real branching that deserves tests.
-      entity.py is 68% (DeviceInfo and the availability override),
-      __init__.py 50% (setup, unload and the v1->v2 migration),
-      coordinator.py 85% and update.py 80%.
+      The rule's own wording is "above 95%", so this exceeds it rather than
+      reinterpreting it.
 
-      Not gated in CI yet, deliberately: a --cov-fail-under invented before
-      anything was measured is a number nobody chose. The figure above is the
-      one to ratchet from.
+      What closed the gap was mounting the platforms. sensor.py and
+      binary_sensor.py sat at 0% because nothing set an entry up through
+      async_setup_entry; one fixture that does, with only the ssh subprocess
+      replaced, now exercises the platform forwards, the entity registry,
+      DeviceInfo off the ssh read, and -- first time anywhere -- the
+      availability overrides §11 contracts for: that health and the reboot
+      counter stay up while their subject is down.
 
-      Already satisfied: LAW.md §15's requirement that the suite's
-      third-party imports be declared BESIDE it rather than in the workflow.
+      ONE LINE WAS DELETED RATHER THAN COVERED. entity.py's _metric had no
+      callers, and dead code is unreachable by definition, so it was the
+      reason that module could never finish. A coverage figure earned by
+      exercising dead code would be the number wearing a disguise. Verified
+      across every .py, .md and .json in the tree before removing it.
+
+      A line that genuinely cannot be exercised takes `# pragma: no cover`
+      and the comment saying why -- a reviewable claim, unlike a threshold
+      quietly lowered.
+
+      Also satisfied: LAW.md §15's requirement that the suite's third-party
+      imports be declared BESIDE it rather than in the workflow.
       requirements_test.txt does that, and tests/test_declared_dependencies.py
       checks it statically by AST on every commit.

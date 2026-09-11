@@ -44,6 +44,13 @@ APT_FAILED = (
     "__END__\n"
 )
 
+DATA_SLOW = {
+    "UPGRADABLE": "4",
+    "SECURITY": "2",
+    "KERNEL_INSTALLED": "6.12.101+deb13-amd64",
+    "SECURITY_PKGS": "libssl3,curl",
+}
+
 POLLED = {
     "offline_expected": False,
     "auth_failed": False,
@@ -51,12 +58,7 @@ POLLED = {
     "ssh_ok": True,
     "ssh": {"UNAME": "6.12.101+deb13-amd64"},
     "metrics": {"uptime_secs": 9000.0},
-    "slow": {
-        "UPGRADABLE": "4",
-        "SECURITY": "2",
-        "KERNEL_INSTALLED": "6.12.101+deb13-amd64",
-        "SECURITY_PKGS": "libssl3,curl",
-    },
+    "slow": DATA_SLOW,
     "hostname_configured": "testhost",
     "ssh_fails": 0,
 }
@@ -300,3 +302,147 @@ async def test_an_offline_host_is_dispositioned_not_called_patched(
     assert attrs["disposition"] == "offline_expected"
     assert attrs["updates_pending"] is None
     assert attrs["last_install_log"] is None
+
+
+# --- the published version strings ------------------------------------------
+
+
+def test_an_offline_host_is_never_called_up_to_date(entity) -> None:
+    """installed == latest so it scores as nothing-pending, and the summary
+    says plainly that it is a disposition rather than a patch state."""
+    e, _c = entity(
+        options={CONF_OFFLINE_EXPECTED: True}, data={"offline_expected": True}
+    )
+    assert e.installed_version == e.latest_version
+    assert "does not mean current" in e.release_summary
+
+
+def test_an_unread_host_reads_unknown_and_says_so(entity) -> None:
+    e, _c = entity(data={"slow": {}, "ssh": {}})
+    assert e.latest_version is None
+    assert e.release_summary == "Patch state unknown — the host did not answer."
+
+
+def test_a_current_host_publishes_the_running_kernel_as_latest(entity) -> None:
+    e, _c = entity(
+        data={
+            "ssh": {"UNAME": "6.12.101+deb13-amd64"},
+            "slow": {
+                "UPGRADABLE": "0",
+                "SECURITY": "0",
+                "KERNEL_INSTALLED": "6.12.101+deb13-amd64",
+            },
+        }
+    )
+    assert e.latest_version == e.installed_version
+    assert e.release_summary == "Up to date, and running the newest installed kernel."
+
+
+def test_pending_packages_are_counted_into_the_target(entity) -> None:
+    e, _c = entity()
+    assert e.latest_version == "6.12.101+deb13-amd64 +4 pkg (2 security)"
+    summary = e.release_summary
+    assert "4 package(s) upgradable" in summary
+    assert "2 from a security archive" in summary
+
+
+def test_pending_without_security_omits_the_security_clause(entity) -> None:
+    e, _c = entity(
+        data={
+            "slow": {
+                "UPGRADABLE": "3",
+                "SECURITY": "0",
+                "KERNEL_INSTALLED": "6.12.101+deb13-amd64",
+            }
+        }
+    )
+    assert e.latest_version == "6.12.101+deb13-amd64 +3 pkg"
+    assert "security archive" not in e.release_summary
+
+
+def test_a_stale_kernel_is_named_in_the_summary(entity) -> None:
+    """Remediated on disk, still exploitable in memory -- uname is RAM and
+    dpkg is disk."""
+    e, _c = entity(
+        data={
+            "ssh": {"UNAME": "6.12.100+deb13-amd64"},
+            "slow": {
+                "UPGRADABLE": "0",
+                "SECURITY": "0",
+                "KERNEL_INSTALLED": "6.12.101+deb13-amd64",
+            },
+        }
+    )
+    assert "reboot required" in e.release_summary
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected", "why"),
+    [
+        ("1", True, "installed"),
+        ("0", False, "absent from the host"),
+        (None, None, "NOBODY ASKED -- never False"),
+        ("", None, "an empty answer is not a no"),
+        ("nonsense", None, "unparseable is not a no"),
+    ],
+)
+def test_unattended_upgrades_reporting(entity, raw, expected, why) -> None:
+    """'nothing is auto-patching here' is a claim about the host, and the host
+    is the only thing that can answer it."""
+    slow = dict(DATA_SLOW)
+    if raw is not None:
+        slow["UNATTENDED"] = raw
+    e, _c = entity(data={"slow": slow})
+    assert e.extra_state_attributes["unattended_upgrades"] is expected, why
+
+
+def test_the_update_entity_never_goes_unavailable(entity) -> None:
+    """An unknown patch state must be SAID, and an unavailable entity's
+    attributes vanish with it."""
+    e, _c = entity(data={"online": False, "ssh": {}, "slow": {}})
+    assert e.available is True
+
+
+def test_install_is_only_advertised_where_the_grant_exists(entity) -> None:
+    from homeassistant.components.update import UpdateEntityFeature
+
+    allowed, _c = entity()
+    refused, _c2 = entity(options={CONF_ALLOW_INSTALL: False})
+    assert allowed.supported_features & UpdateEntityFeature.INSTALL
+    assert not (refused.supported_features & UpdateEntityFeature.INSTALL)
+
+
+# --- the two findings a successful run can still carry ----------------------
+
+
+async def test_a_removal_during_upgrade_is_said_out_loud(
+    hass, entity, caplog
+) -> None:
+    """apt-get upgrade is not supposed to be able to remove a package. If it
+    ever does, that is a finding, not a statistic."""
+    e, c = entity()
+    out = APT_OK.replace("REMOVED=0", "REMOVED=2")
+    with (
+        patch.object(c, "async_exec", AsyncMock(return_value=(True, out, SSH_OK))),
+        patch.object(c, "_save", AsyncMock()),
+        patch.object(c, "async_request_refresh", AsyncMock()),
+    ):
+        await e.async_install(None, False)
+    assert "REMOVED 2 package(s)" in caplog.text
+
+
+async def test_packages_kept_back_are_reported_not_escalated(
+    hass, entity, caplog
+) -> None:
+    """Escalating to full-upgrade can remove packages on a host with no
+    console, so they are reported and left."""
+    e, c = entity()
+    out = APT_OK.replace("KEPT_BACK=0", "KEPT_BACK=1")
+    with (
+        patch.object(c, "async_exec", AsyncMock(return_value=(True, out, SSH_OK))),
+        patch.object(c, "_save", AsyncMock()),
+        patch.object(c, "async_request_refresh", AsyncMock()),
+    ):
+        await e.async_install(None, False)
+    assert "kept back" in caplog.text
+    assert "Not escalating" in caplog.text
