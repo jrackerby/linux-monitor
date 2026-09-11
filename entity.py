@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -61,6 +59,3 @@ class LinuxMonitorEntity(CoordinatorEntity[LinuxMonitorCoordinator]):
         if data.get("offline_expected"):
             return False
         return bool(data.get("online")) and super().available
-
-    def _metric(self, key: str) -> Any:
-        return ((self.coordinator.data or {}).get("metrics") or {}).get(key)

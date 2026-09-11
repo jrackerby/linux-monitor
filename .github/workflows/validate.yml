@@ -108,15 +108,22 @@ jobs:
           pip install -r requirements_test.txt
 
       - name: pytest
-        # Coverage is REPORTED, not gated. `test-coverage` is a Silver rule
-        # with a number attached, and a threshold invented before anything
-        # was measured is a number nobody chose. Read it off a real run
-        # first; the gate is a separate decision (#2's gap-list).
+        # COVERAGE IS NOW GATED, AT THE MEASURED FIGURE. It was reported and
+        # not gated until a run said what the number was -- a threshold
+        # invented beforehand is a number nobody chose. The run that closed
+        # #17 covered 807 of 807 statements, so the ratchet is set there
+        # rather than at the quality scale's 95%: parking it below what the
+        # suite achieves licenses exactly that much silent rot.
+        #
+        # A line that genuinely cannot be exercised takes `# pragma: no
+        # cover` AND the comment saying why -- which is a reviewable claim,
+        # unlike a threshold quietly lowered.
         run: |
           python -m pytest \
             --junitxml=pytest-report.xml \
             --cov=custom_components.linux_monitor \
-            --cov-report=term-missing:skip-covered
+            --cov-report=term-missing:skip-covered \
+            --cov-fail-under=100
 
       - name: a gate that ran nothing is not a pass
         run: |
@@ -133,10 +140,11 @@ jobs:
           # pytest already fails an EMPTY suite (exit 5). This catches the more
           # dangerous shape: a suite that still runs after quietly losing most
           # of itself to a bad conftest or a renamed directory.
-          # 90 against a suite that executes ~120. Set from a measured run
-          # rather than guessed: the first green run executed 106.
-          if [ "$n" -lt 90 ]; then
-            echo "::error title=Suite floor::executed $n tests, expected at least 90"
+          # 200 against a suite that executes 227. Set from a measured run
+          # rather than guessed, and raised with the suite: 90 was right when
+          # it ran 130.
+          if [ "$n" -lt 200 ]; then
+            echo "::error title=Suite floor::executed $n tests, expected at least 200"
             exit 1
           fi
 
