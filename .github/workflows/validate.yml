@@ -230,7 +230,13 @@ jobs:
           # repo had neither. Both are set now, so both are ENFORCED -- going
           # on ignoring a check that would pass is how a gate stops being one.
           #
-          # `brands` stays ignored: it needs either brand/icon.png committed
-          # here or an accepted PR against home-assistant/brands, and until one
-          # of those exists the check can only ever fail.
-          ignore: brands
+          # `brands` IS NO LONGER IGNORED. It was ignored because it needed
+          # either brand/icon.png committed here or an accepted PR against
+          # home-assistant/brands, and neither existed. The first of the two
+          # exists now: brand/ carries the icon and logo set. hacs/action reads
+          # exactly that path -- custom_components/hacs/validate/brands.py
+          # resolves `brand/icon.png` at the repository root when
+          # content_in_root is declared, and returns before it queries
+          # brands.home-assistant.io at all -- so the check can now pass on
+          # this repo's own files. Going on ignoring a check that would pass is
+          # how a gate stops being one.
