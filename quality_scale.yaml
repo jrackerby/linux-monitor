@@ -48,14 +48,26 @@ rules:
   # sub-interval inside that loop with its own retry interval on failure. A
   # host's patch state does not move minute to minute; its reachability does.
 
-  brands:
-    status: exempt
-    comment: >
-      brands is an accepted PR against home-assistant/brands, which takes core
-      integrations. This is a custom component installed through HACS as a
-      custom repository and is not headed for core. validate.yml passes
-      `ignore: brands` to hacs/action for the same reason, with that reasoning
-      recorded beside it.
+  brands: done
+  # REVERSED, AND THE REASON THE EXEMPTION GAVE IS THE THING THAT CHANGED. This
+  # read `exempt` on the grounds that brands means an accepted PR against
+  # home-assistant/brands, which takes core integrations only. That stopped
+  # being the whole of it in Home Assistant 2026.3: a custom component now
+  # ships its own brand images in a top-level `brand/` directory, and
+  # `homeassistant/components/brands` serves them from
+  # `/api/brands/integration/<domain>/<image>` AHEAD of the CDN. `brand/` here
+  # carries icon, logo and dark_logo at 1x and 2x.
+  #
+  # hacs/action's own brands validator reads the same directory --
+  # custom_components/hacs/validate/brands.py resolves `brand/icon.png` at the
+  # repository root under content_in_root and returns before it ever queries
+  # brands.home-assistant.io -- so `ignore: brands` has come out of
+  # validate.yml. The rule is checked now rather than argued around.
+  #
+  # `dark_icon` is deliberately absent: the swirl is one crimson on
+  # transparency and reads on either theme, and the brands fallback chain
+  # serves icon.png for a missing dark_icon. Only the wordmark needed a dark
+  # variant, because it is black.
 
   common-modules: done
   # coordinator.py holds the single DataUpdateCoordinator; entity.py holds the

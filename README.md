@@ -100,6 +100,25 @@ integration's: the SSH key it was pointed at, and the `known_hosts` file. Note
 also that re-adding a host mints **new entity IDs** — Home Assistant never
 reclaims a released ID, so anything referring to the old ones needs updating.
 
+## Branding
+
+`brand/` carries this integration's own icon and logo — the Debian swirl for
+the icon, the swirl-and-wordmark lockup for the logo, each at 1x and 2x, plus a
+dark-optimised logo whose wordmark is white. Home Assistant 2026.3 and later
+serve them from `/api/brands/integration/linux_monitor/<image>` and prefer them
+over the brands CDN, so the integration, its config entries and its devices
+carry the mark with nothing published to home-assistant/brands. Older cores
+ignore the directory and fall back to the CDN's placeholder, which is what they
+showed before.
+
+There is no `dark_icon`: the swirl is a single crimson on transparency and
+reads on either theme, and Home Assistant's fallback chain serves `icon.png`
+when a dark variant is missing. Only the wordmark needed one.
+
+The swirl and the wordmark are the Debian Project's marks, used here to name
+what this integration reads — a Debian host, through `apt` and `dpkg-query`.
+This is not a Debian project and carries no endorsement from it.
+
 ## Development
 
 Issues and feature requests: **[jrackerby/linux-monitor/issues](https://github.com/jrackerby/linux-monitor/issues)**.
