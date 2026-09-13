@@ -26,6 +26,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # hassfest, hacs and the shared tests/imports jobs run in
+  # jrackerby/gha-workflows validate-integration.yml (workflow_call);
+  # master's required contexts are "validate / <job>" (jrackerby/HA#821).
+  validate:
+    uses: jrackerby/gha-workflows/.github/workflows/validate-integration.yml@master
+    with:
+      domain: "linux_monitor"
+      public: true
+      test-command: ""
+      run-imports: false
+
   # THE SUITE. Runs first in the file because it is the gate that actually
   # reads this repo's own code -- hassfest and hacs/action below validate
   # packaging and presentation, and both were green throughout the entire
@@ -147,96 +158,3 @@ jobs:
             echo "::error title=Suite floor::executed $n tests, expected at least 212"
             exit 1
           fi
-
-  hassfest:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      # Into a subdirectory ON PURPOSE. The step below builds the layout
-      # hassfest expects AT THE WORKSPACE ROOT, and it cannot do that if the
-      # repo is already checked out there.
-      - uses: actions/checkout@v4
-        with:
-          path: src
-
-      # WHY THIS STAGING STEP EXISTS. home-assistant/actions/hassfest takes no
-      # path input -- it runs the hassfest image against ${{ github.workspace }}
-      # and scans custom_components/*. This repo keeps its integration at the
-      # ROOT (hacs.json content_in_root: true), which is the layout HACS
-      # installs from. Handed the repo as-is, hassfest finds zero integrations.
-      # So build the HA layout here rather than restructure the repo and break
-      # the way HACS installs it.
-      - name: stage the custom_components layout hassfest scans
-        run: |
-          mkdir -p "custom_components/$DOMAIN"
-          # cp/rm, not rsync: rsync is present on today's ubuntu-latest but is
-          # not part of any image guarantee, and a staging step that dies on a
-          # missing tool is a gate that silently stops running.
-          cp -a src/. "custom_components/$DOMAIN/"
-          rm -rf "custom_components/$DOMAIN/.git" "custom_components/$DOMAIN/.github"
-          # A gate that could not run is not a pass. If the copy above ever
-          # moves nothing, hassfest validates an empty tree and reports green
-          # over an integration it never opened -- so assert the staged
-          # manifest by hand before handing it over.
-          test -f "custom_components/$DOMAIN/manifest.json" \
-            || { echo "CANNOT RUN: staging produced no manifest.json -- hassfest would pass vacuously"; exit 1; }
-          echo "staged $(find "custom_components/$DOMAIN" -type f | wc -l) files"
-
-      - uses: home-assistant/actions/hassfest@master
-
-  hacs:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      # VOID -- NOT A PASS, AND NOT A FAILURE OF THIS REPO. Measured on the
-      # first run of this workflow: hacs/action reported <Validation hacsjson>
-      # and <Validation integration_manifest> failed, the latter with
-      # "expected a dictionary. Got None". Neither is about the files here.
-      # HACS fetches hacs.json and manifest.json from raw.githubusercontent.com
-      # (repositories/base.py get_hacs_json_raw, repositories/integration.py
-      # get_integration_manifest) through base.py async_download_file, which is
-      # called with headers=None -- no Authorization header on that path, ever.
-      # A private repository 404s there. Confirmed by hand against both this
-      # branch and master: 404 on each.
-      #
-      # That same unauthenticated fetch is what a LIVE HACS install uses, so it
-      # is not a CI artifact: HACS cannot install this repo while it is private.
-      # Reporting it as VOID rather than green keeps the distinction that
-      # matters -- the check did not run, so nothing was proven either way. It
-      # starts running by itself the moment the repository is made public.
-      - name: VOID -- HACS validation cannot run against a private repository
-        if: ${{ github.event.repository.private }}
-        run: |
-          echo "::notice title=HACS validation VOID::this repository is private, so HACS cannot read it"
-          echo "HACS reads hacs.json and manifest.json from raw.githubusercontent.com with NO"
-          echo "Authorization header, in CI and in a live install alike, so a private repository"
-          echo "404s. This step is a VOID, not a pass: nothing about HACS compatibility was"
-          echo "verified here."
-
-      - uses: hacs/action@main
-        if: ${{ !github.event.repository.private }}
-        with:
-          category: integration
-          # These are DEFAULT-STORE INCLUSION checks. None of hacs/action's
-          # validators run at install time -- validate/manager.py's
-          # async_run_repository_checks returns immediately unless
-          # hacs.system.action -- so they gate store inclusion, not whether a
-          # custom-repository install works. They are still worth running: they
-          # are the only automated read on this repo's public presentation.
-          #
-          # `topics` and `license` used to be ignored here because a private
-          # repo had neither. Both are set now, so both are ENFORCED -- going
-          # on ignoring a check that would pass is how a gate stops being one.
-          #
-          # `brands` IS NO LONGER IGNORED. It was ignored because it needed
-          # either brand/icon.png committed here or an accepted PR against
-          # home-assistant/brands, and neither existed. The first of the two
-          # exists now: brand/ carries the icon and logo set. hacs/action reads
-          # exactly that path -- custom_components/hacs/validate/brands.py
-          # resolves `brand/icon.png` at the repository root when
-          # content_in_root is declared, and returns before it queries
-          # brands.home-assistant.io at all -- so the check can now pass on
-          # this repo's own files. Going on ignoring a check that would pass is
-          # how a gate stops being one.
