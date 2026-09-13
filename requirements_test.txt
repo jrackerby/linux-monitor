@@ -7,9 +7,14 @@
 #
 # ONE PIN, AND IT DRAGS THE WHOLE CHANNEL. pytest-homeassistant-custom-component
 # pins homeassistant== exactly, so this line decides which Home Assistant the
-# suite runs against. 0.13.364 pins 2026.9.1, which is the point: a suite green
+# suite runs against. 0.13.365 pins 2026.9.2, which is the point: a suite green
 # against a different core than the one you run certifies nothing about it.
 #
-# That pin also decides the INTERPRETER: homeassistant 2026.9.1 requires
+# THE NUMBER TRACKS THE LIVE CORE, AND IT IS READ OFF THE ESTATE, NEVER OFF A
+# CHANGELOG. It moved here because the instance did: 2026.9.1 -> 2026.9.2 (#26).
+# Bumping it is therefore not routine maintenance -- re-read the running
+# version first, then pick the release that pins exactly that.
+#
+# That pin also decides the INTERPRETER: homeassistant 2026.9.2 requires
 # Python >=3.14.2, so the workflow pins 3.14 and nothing older can run this.
-pytest-homeassistant-custom-component==0.13.364
+pytest-homeassistant-custom-component==0.13.365
