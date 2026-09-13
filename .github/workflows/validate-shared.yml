@@ -1,0 +1,160 @@
+name: validate-shared
+
+# This repository shipped without CI: a change landed and nothing between the
+# edit and a running Home Assistant ever validated the manifest. These jobs are
+# that missing gate.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    # HACS and hassfest both move under us. A repo that only validates on push
+    # goes quietly stale between commits, and these repos can sit untouched for
+    # months.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+env:
+  DOMAIN: linux_monitor
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # hassfest, hacs and the shared tests/imports jobs run in
+  # jrackerby/gha-workflows validate-integration.yml (workflow_call);
+  # master's required contexts are "validate / <job>" (jrackerby/HA#821).
+  validate:
+    uses: jrackerby/gha-workflows/.github/workflows/validate-integration.yml@master
+    with:
+      domain: "linux_monitor"
+      public: true
+      test-command: ""
+      run-imports: false
+
+  # THE SUITE. Runs first in the file because it is the gate that actually
+  # reads this repo's own code -- hassfest and hacs/action below validate
+  # packaging and presentation, and both were green throughout the entire
+  # period this repo had no tests at all (#10).
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      # Into a subdirectory ON PURPOSE, exactly as the hassfest job below does
+      # and for a closely related reason: the layout has to be built at the
+      # workspace ROOT, and it cannot be if the repo is already checked out
+      # there.
+      - uses: actions/checkout@v4
+        with:
+          path: src
+
+      # PINNED BY THE HARNESS, NOT CHOSEN HERE.
+      # requirements_test.txt pins pytest-homeassistant-custom-component,
+      # which pins homeassistant== exactly, which requires Python >=3.14.2.
+      # Lowering this line does not relax that -- it just moves the failure
+      # from here to the install step.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      # WHY THIS STAGING STEP EXISTS, AND IT IS NOT THE SAME REASON AS
+      # HASSFEST'S. hacs.json declares content_in_root, so this integration's
+      # package __init__.py sits at the repository root -- which makes the
+      # ROOT a Python package. pytest turns every directory holding an
+      # __init__.py into a Package collector whose setup() imports that
+      # __init__.py, so run from a bare checkout it imports this integration's
+      # own __init__.py as a top-level module with no parent and every test
+      # errors with "attempted relative import with no known parent package"
+      # before a single test body runs.
+      #
+      # It is INVISIBLE to --collect-only, because setup() does not run there.
+      # That is how the first run of this job reported 63 tests collected and
+      # then failed the moment the suite actually ran.
+      #
+      # Staging the integration under custom_components/<domain>/ leaves a
+      # workspace root that is not a package, which is also the layout every
+      # Home Assistant tool expects.
+      - name: stage the layout Home Assistant and pytest both expect
+        run: |
+          set -euo pipefail
+          mkdir -p "custom_components/$DOMAIN"
+          # cp/rm rather than rsync, same reasoning as the hassfest job: rsync
+          # is on today's ubuntu-latest but is not part of any image
+          # guarantee, and a staging step that dies on a missing tool is a
+          # gate that silently stops running.
+          cp -a src/. "custom_components/$DOMAIN/"
+          rm -rf "custom_components/$DOMAIN/.git" \
+                 "custom_components/$DOMAIN/.github" \
+                 "custom_components/$DOMAIN/tests"
+          # The suite and its configuration belong to the WORKSPACE, not to
+          # the integration -- leaving them inside would put pytest.ini beside
+          # a package again.
+          mv "custom_components/$DOMAIN/pytest.ini" .
+          mv "custom_components/$DOMAIN/requirements_test.txt" .
+          cp -a src/tests tests
+
+          # A GATE THAT COULD NOT RUN IS NOT A PASS. Assert every property the
+          # step exists to produce, by hand, before anything depends on it.
+          test -f "custom_components/$DOMAIN/manifest.json" \
+            || { echo "::error::staging produced no manifest.json"; exit 1; }
+          test -f tests/conftest.py \
+            || { echo "::error::staging produced no tests"; exit 1; }
+          test ! -e __init__.py \
+            || { echo "::error::the workspace root is a package -- pytest will import it"; exit 1; }
+          echo "staged $(find "custom_components/$DOMAIN" -type f | wc -l) files"
+
+      - name: install test dependencies FROM THE FILE BESIDE THE SUITE
+        run: |
+          set -euo pipefail
+          python -VV
+          python -m pip install --upgrade pip
+          # Never a package list in this workflow: a second copy goes stale on
+          # the next import added, and its failure then reads as a broken test
+          # rather than as a missing declaration.
+          pip install -r requirements_test.txt
+
+      - name: pytest
+        # COVERAGE IS NOW GATED, AT THE MEASURED FIGURE. It was reported and
+        # not gated until a run said what the number was -- a threshold
+        # invented beforehand is a number nobody chose. The run that closed
+        # #17 covered 807 of 807 statements, so the ratchet is set there
+        # rather than at the quality scale's 95%: parking it below what the
+        # suite achieves licenses exactly that much silent rot.
+        #
+        # A line that genuinely cannot be exercised takes `# pragma: no
+        # cover` AND the comment saying why -- which is a reviewable claim,
+        # unlike a threshold quietly lowered.
+        run: |
+          python -m pytest \
+            --junitxml=pytest-report.xml \
+            --cov=custom_components.linux_monitor \
+            --cov-report=term-missing:skip-covered \
+            --cov-fail-under=100
+
+      - name: a gate that ran nothing is not a pass
+        run: |
+          set -euo pipefail
+          # COUNTED OUT OF THE JUNIT REPORT, NEVER PARSED OUT OF PYTEST'S
+          # PROSE. The first version of this step read the "N tests collected"
+          # summary line; pytest 9 does not print one under `-q
+          # --collect-only` -- it prints a per-file count list instead -- so a
+          # 63-test run reported 0 and failed the build. The XML is a stable
+          # contract and this counts tests that actually RAN, which is a
+          # stronger floor than counting the ones that were collected.
+          n=$(python -c "import xml.etree.ElementTree as ET; print(sum(1 for _ in ET.parse('pytest-report.xml').getroot().iter('testcase')))")
+          echo "executed $n tests"
+          # pytest already fails an EMPTY suite (exit 5). This catches the more
+          # dangerous shape: a suite that still runs after quietly losing most
+          # of itself to a bad conftest or a renamed directory.
+          # 212 against a suite that executes 237. Set from a measured run
+          # rather than guessed, and raised with the suite: 90 was right when
+          # it ran 130, 200 when it ran 227.
+          if [ "$n" -lt 212 ]; then
+            echo "::error title=Suite floor::executed $n tests, expected at least 212"
+            exit 1
+          fi
